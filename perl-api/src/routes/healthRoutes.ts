@@ -7,7 +7,6 @@ export const createHealthRoutes = (repositories: RepositorySet) => {
   const controller = createHealthController(repositories);
 
   router.get('/health', controller.getHealth);
-  router.get('/ping', controller.getHealth);
 
   return router;
 };
