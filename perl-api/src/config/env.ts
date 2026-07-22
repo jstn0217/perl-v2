@@ -23,8 +23,30 @@ const resolveAllowedOrigins = (value: string | undefined): string[] => {
     .filter(Boolean);
 };
 
+const resolveBoolean = (value: string | undefined, fallback: boolean) => {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return value === 'true';
+};
+
+const resolvePositiveInteger = (value: string | undefined, fallback: number) => {
+  const parsed = Number.parseInt(value ?? `${fallback}`, 10);
+
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+};
+
 export const env = {
   port: resolvePort(process.env.PORT),
   dataLayer: resolveDataLayer(process.env.DATA_LAYER),
-  allowedOrigins: resolveAllowedOrigins(process.env.ALLOWED_ORIGINS)
+  allowedOrigins: resolveAllowedOrigins(process.env.ALLOWED_ORIGINS),
+  jwtSecret: process.env.JWT_SECRET ?? 'dev-phase-2-secret',
+  jwtCookieName: process.env.JWT_COOKIE_NAME ?? 'perl_session',
+  jwtExpiresInSeconds: resolvePositiveInteger(process.env.JWT_EXPIRES_IN_SECONDS, 60 * 60 * 8),
+  cookieSecure: resolveBoolean(process.env.COOKIE_SECURE, false)
 };

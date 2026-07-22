@@ -15,6 +15,7 @@ All notable changes to the PERL platform's plan and codebase are documented here
 ### Added
 - Phase 0: scaffolded `perl-api/` and `perl-rfid-frontend/` with TypeScript app shells, mock-by-default backend repository composition, lint/test/build tooling, environment examples, and a placeholder frontend shell that boots without any database dependency.
 - Phase 1: added `SchoolProfile`-based tenant context with `TenantService`, mock school seeds, `GET /api/school/current`, and a branded frontend shell that resolves school identity before rendering.
+- Phase 2: added school-scoped mock users, `AuthService`, JWT cookie session endpoints, protected admin route coverage, and branded login/protected-route scaffolding so auth and role isolation can be verified without a database.
 - Tooling: added root [docker-compose.yml](/Users/jmendoza/Desktop/Documents/Work_Code/sandbox/perl-v2/docker-compose.yml) plus app-level Dockerfiles so `perl-api` and `perl-rfid-frontend` can run together in containers on mock data.
 - Planning: updated `planning/PLAN.md` from the legacy security review to capture secure-session, device-auth, realtime-auth, tenant-isolation, rate-limiting, upload-hardening, and audit-logging requirements for the rebuild.
 - Planning: consolidated `planning/existing-app-summary-and-simplification-plan.md` and `planning/phase-0-execution-plan.md` into `planning/PLAN.md` as the single planning source of truth, preserving the legacy-app inventory, rebuild mapping, and Phase 0 execution details.

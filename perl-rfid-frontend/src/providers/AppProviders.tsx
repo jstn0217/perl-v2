@@ -1,6 +1,7 @@
 import type { PropsWithChildren } from 'react';
 import { useEffect, useState } from 'react';
 import { fetchTenantContext } from '../lib/api';
+import { AuthProvider } from './AuthProvider';
 import { ThemeProvider } from './ThemeProvider';
 import type { SchoolProfile } from '../types/school';
 import { TenantContext } from './TenantContext';
@@ -96,7 +97,9 @@ export const AppProviders = ({ children }: PropsWithChildren) => {
         setActiveSchoolSlug
       }}
     >
-      <ThemeProvider school={activeSchool}>{children}</ThemeProvider>
+      <ThemeProvider school={activeSchool}>
+        <AuthProvider>{children}</AuthProvider>
+      </ThemeProvider>
     </TenantContext.Provider>
   );
 };

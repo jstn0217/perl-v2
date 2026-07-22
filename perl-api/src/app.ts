@@ -1,5 +1,8 @@
+import cookieParser from 'cookie-parser';
 import express from 'express';
 import { env } from './config/env.js';
+import { createAdminRoutes } from './routes/adminRoutes.js';
+import { createAuthRoutes } from './routes/authRoutes.js';
 import { createHealthRoutes } from './routes/healthRoutes.js';
 import { createSchoolRoutes } from './routes/schoolRoutes.js';
 import type { RepositorySet } from './repositories/index.js';
@@ -25,8 +28,11 @@ export const createApp = (repositories: RepositorySet) => {
     next();
   });
   app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api', createAuthRoutes(repositories));
   app.use('/api', createHealthRoutes(repositories));
   app.use('/api', createSchoolRoutes(repositories));
+  app.use('/api', createAdminRoutes(repositories));
 
   return app;
 };
