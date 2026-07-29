@@ -1,24 +1,69 @@
 services:
-  perl-api:
+  perl-app:
     build:
-      context: ./perl-api
+      context: .
       dockerfile: Dockerfile
-    container_name: perl-api
-    environment:
-      PORT: 4000
-      DATA_LAYER: mock
-      ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
-    ports:
-      - "4000:4000"
-
-  perl-rfid-frontend:
-    build:
-      context: ./perl-rfid-frontend
-      dockerfile: Dockerfile
-    container_name: perl-rfid-frontend
-    environment:
-      VITE_API_URL: http://localhost:4000
-    ports:
-      - "5173:5173"
+    container_name: perl-app
     depends_on:
-      - perl-api
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-4000}
+      DATA_LAYER: ${DATA_LAYER:-mock}
+      IMAGE_STORAGE: ${IMAGE_STORAGE:-mock}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      JWT_SECRET: ${JWT_SECRET:-dev-phase-2-secret}
+      JWT_COOKIE_NAME: ${JWT_COOKIE_NAME:-perl_session}
+      JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-28800}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      INITIAL_SYSTEM_ADMIN_EMAIL: ${INITIAL_SYSTEM_ADMIN_EMAIL:-system@perl.system}
+      INITIAL_SYSTEM_ADMIN_PASSWORD: ${INITIAL_SYSTEM_ADMIN_PASSWORD:-SystemAdmin123!}
+      INITIAL_SUPPORT_EMAIL: ${INITIAL_SUPPORT_EMAIL:-support@perl.system}
+      INITIAL_SUPPORT_PASSWORD: ${INITIAL_SUPPORT_PASSWORD:-Support123!}
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:-perl}
+      DB_PASSWORD: ${DB_PASSWORD:-perl_dev_password}
+      DB_NAME: ${DB_NAME:-perl}
+      DB_SSL: ${DB_SSL:-false}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      SMS_ENABLED: ${SMS_ENABLED:-true}
+      SMS_PROVIDER: ${SMS_PROVIDER:-mock}
+      SEMAPHORE_API_KEY: ${SEMAPHORE_API_KEY:-}
+      SEMAPHORE_SENDER_NAME: ${SEMAPHORE_SENDER_NAME:-SEMAPHORE}
+      SEMAPHORE_API_URL: ${SEMAPHORE_API_URL:-https://api.semaphore.co/api/v4/messages}
+      WAIT_FOR_MYSQL: ${WAIT_FOR_MYSQL:-auto}
+    ports:
+      - '4000:4000'
+      - '5173:5173'
+  mysql:
+    image: mysql:8.4
+    container_name: perl-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-perl}
+      MYSQL_USER: ${DB_USER:-perl}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-perl_dev_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_password}
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  mysql-data:

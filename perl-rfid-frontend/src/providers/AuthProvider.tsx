@@ -1,13 +1,19 @@
 import type { PropsWithChildren } from 'react';
 import { startTransition, useEffect, useState } from 'react';
-import { fetchSession, login as loginRequest, logout as logoutRequest } from '../lib/api';
+import {
+  fetchSession,
+  fetchSupportSchools,
+  login as loginRequest,
+  logout as logoutRequest
+} from '../lib/api';
 import { useTenantContext } from './TenantContext';
 import { AuthProvider as AuthContextProvider } from './AuthContext';
 import type { LoginFormValues } from './auth-context';
 import type { SessionUser } from '../lib/api';
+import { isPlatformUser } from '../lib/permissions';
 
 export const AuthProvider = ({ children }: PropsWithChildren) => {
-  const { activeSchool } = useTenantContext();
+  const { resetPublicSchool, setAuthenticatedSchool } = useTenantContext();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [status, setStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -20,26 +26,33 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       setError(null);
 
       try {
-        const sessionUser = await fetchSession();
+        const session = await fetchSession();
 
-        if (cancelled) {
+        if (cancelled) return;
+
+        if (!session) {
+          resetPublicSchool();
+          startTransition(() => {
+            setUser(null);
+            setStatus('unauthenticated');
+          });
           return;
         }
 
-        startTransition(() => {
-          if (sessionUser && sessionUser.schoolId === activeSchool.id) {
-            setUser(sessionUser);
-            setStatus('authenticated');
-            return;
-          }
+        if (session?.school) {
+          setAuthenticatedSchool(session.school);
+        } else if (isPlatformUser(session?.user.role)) {
+          const schools = await fetchSupportSchools();
+          if (!cancelled && schools[0]) setAuthenticatedSchool(schools[0], schools);
+        }
 
-          setUser(null);
-          setStatus('unauthenticated');
+        if (cancelled) return;
+        startTransition(() => {
+          setUser(session.user);
+          setStatus('authenticated');
         });
       } catch (sessionError) {
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         startTransition(() => {
           setUser(null);
@@ -54,27 +67,26 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     return () => {
       cancelled = true;
     };
-  }, [activeSchool.id]);
+  }, [resetPublicSchool, setAuthenticatedSchool]);
 
   const login = async ({ email, password }: LoginFormValues) => {
     setError(null);
     setStatus('loading');
 
     try {
-      await loginRequest({
-        email,
-        password,
-        schoolSlug: activeSchool.slug
-      });
+      const session = await loginRequest({ email, password });
+      let availableSchools = session.school ? [session.school] : [];
+      let school = session.school;
 
-      const sessionUser = await fetchSession();
-
-      if (!sessionUser || sessionUser.schoolId !== activeSchool.id) {
-        throw new Error('Your session was not created for the selected school.');
+      if (isPlatformUser(session.user.role)) {
+        availableSchools = await fetchSupportSchools();
+        school = availableSchools[0] ?? null;
       }
 
+      if (school) setAuthenticatedSchool(school, availableSchools);
+
       startTransition(() => {
-        setUser(sessionUser);
+        setUser(session.user);
         setStatus('authenticated');
       });
     } catch (loginError) {
@@ -96,6 +108,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     try {
       await logoutRequest();
     } finally {
+      resetPublicSchool();
       startTransition(() => {
         setUser(null);
         setStatus('unauthenticated');

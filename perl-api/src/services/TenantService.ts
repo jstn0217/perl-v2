@@ -1,8 +1,34 @@
+import { randomUUID } from 'node:crypto';
 import type { ITenantRepository } from '../repositories/interfaces/ITenantRepository.js';
 import type { SchoolProfile } from '../types/SchoolProfile.js';
 
+export interface CreateSchoolInput {
+  name: string;
+  slug: string;
+  contactEmail: string;
+  theme?: Partial<SchoolProfile['theme']>;
+}
+
+const defaultTheme: SchoolProfile['theme'] = {
+  primaryColor: '#164E63',
+  secondaryColor: '#ECF4F6',
+  accentColor: '#F59E0B'
+};
+const hexColorPattern = /^#[0-9A-F]{6}$/i;
+const schoolSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 export class TenantService {
   constructor(private readonly tenantRepository: ITenantRepository) {}
+
+  async getSchoolById(schoolId: string): Promise<SchoolProfile> {
+    const school = await this.tenantRepository.findSchoolById(schoolId);
+
+    if (!school) {
+      throw new Error('School not found.');
+    }
+
+    return school;
+  }
 
   async getCurrentSchool(preferredSlug?: string): Promise<SchoolProfile> {
     if (preferredSlug) {
@@ -16,15 +42,51 @@ export class TenantService {
     return this.tenantRepository.getDefaultSchool();
   }
 
-  async getSchoolContext(preferredSlug?: string): Promise<{
-    school: SchoolProfile;
-    schools: SchoolProfile[];
-  }> {
-    const [school, schools] = await Promise.all([
-      this.getCurrentSchool(preferredSlug),
-      this.tenantRepository.listSchools()
-    ]);
+  async createSchool(input: CreateSchoolInput): Promise<SchoolProfile> {
+    const name = input.name?.trim();
+    const slug = input.slug?.trim().toLowerCase();
+    const contactEmail = input.contactEmail?.trim().toLowerCase();
 
-    return { school, schools };
+    if (!name || name.length < 2) {
+      throw new Error('School name must be at least 2 characters.');
+    }
+    if (!slug || !schoolSlugPattern.test(slug) || slug.length > 128) {
+      throw new Error('School slug must contain lowercase letters, numbers, and single hyphens only.');
+    }
+    if (!contactEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+      throw new Error('A valid school contact email is required.');
+    }
+    if (await this.tenantRepository.findSchoolBySlug(slug)) {
+      throw new Error('That school slug is already in use.');
+    }
+
+    const theme = { ...defaultTheme, ...input.theme };
+    if (Object.values(theme).some((color) => !hexColorPattern.test(color))) {
+      throw new Error('School theme colors must use six-digit hex values.');
+    }
+
+    return this.tenantRepository.createSchool({
+      id: `school-${randomUUID()}`,
+      slug,
+      name,
+      logoUrl: null,
+      theme,
+      contactEmail,
+      smsEnabled: false,
+      smsSenderName: null
+    });
+  }
+
+  async updateSchoolProfile(
+    schoolId: string,
+    changes: Partial<Pick<SchoolProfile, 'name' | 'logoUrl' | 'contactEmail' | 'theme'>>
+  ): Promise<SchoolProfile> {
+    const updated = await this.tenantRepository.updateSchoolProfile(schoolId, changes);
+
+    if (!updated) {
+      throw new Error('School not found.');
+    }
+
+    return updated;
   }
 }

@@ -1,0 +1,56 @@
+import type { UserRole } from './User.js';
+
+export const auditActions = [
+  'SUPPORT_CONTEXT_ACCESSED',
+  'SCHOOL_CREATED',
+  'SCHOOL_SMS_SETTINGS_UPDATED',
+  'SCHOOL_PROFILE_UPDATED',
+  'SCHOOL_LOGO_UPDATED',
+  'USER_CREATED',
+  'USERS_IMPORTED',
+  'USER_UPDATED',
+  'USER_IMAGE_UPDATED',
+  'USER_DEACTIVATED',
+  'DEVICE_REGISTERED',
+  'DEVICE_KEY_ROTATED',
+  'DEVICE_DEACTIVATED',
+  'ATTENDANCE_EXPORTED',
+  'SCHOOL_DATA_EXPORTED',
+  'SCHOOL_BACKUP_CREATED',
+  'USER_DATA_EXPORTED',
+  'USER_DATA_ERASED',
+  'SCHOOL_DATA_ERASED',
+  'SCHOOL_BACKUP_RESTORED'
+] as const;
+
+export type AuditAction = (typeof auditActions)[number];
+
+export interface AuditRecord {
+  id: string;
+  schoolId: string;
+  actorUserId: string;
+  actorRole: UserRole;
+  supportInitiated: boolean;
+  action: AuditAction;
+  targetType: 'SCHOOL' | 'USER' | 'DEVICE';
+  targetId: string | null;
+  changeSummary: string;
+  occurredAt: string;
+}
+
+export interface AuditPage {
+  records: AuditRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AuditFilters {
+  search?: string;
+  action?: AuditAction;
+  actorRole?: UserRole;
+  supportInitiated?: boolean;
+  targetType?: AuditRecord['targetType'];
+  from?: string;
+  to?: string;
+}

@@ -22,8 +22,16 @@ export const attachSessionUser =
       const payload = verifySessionToken(token);
       const user = await authService.getSessionUser(payload.sub);
 
-      if (user) {
-        req.currentUser = user;
+      if (
+        user &&
+        user.schoolId === payload.schoolId &&
+        user.role === payload.role
+      ) {
+        req.currentUser = {
+          ...user,
+          schoolId: payload.schoolId,
+          role: payload.role
+        };
       }
     } catch {
       req.currentUser = undefined;
@@ -62,4 +70,18 @@ export const requireRole =
     } catch {
       return res.status(403).json({ message: 'Forbidden.' });
     }
+  };
+
+export const requireUserRole =
+  (allowedRoles: UserRole[]) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    if (!req.currentUser) {
+      return res.status(401).json({ message: 'Authentication required.' });
+    }
+
+    if (!allowedRoles.includes(req.currentUser.role)) {
+      return res.status(403).json({ message: 'Forbidden.' });
+    }
+
+    next();
   };

@@ -7,10 +7,14 @@ export const createSchoolController = (repositories: RepositorySet) => {
 
   return {
     async getCurrentSchool(req: Request, res: Response) {
-      const requestedSlug = typeof req.query.school === 'string' ? req.query.school : undefined;
-      const schoolContext = await tenantService.getSchoolContext(requestedSlug);
+      const schoolId = req.currentUser?.schoolId;
 
-      res.json(schoolContext);
+      if (!schoolId) {
+        return res.status(400).json({ message: 'Select a school through the support workspace.' });
+      }
+
+      const school = await tenantService.getSchoolById(schoolId);
+      return res.json({ school });
     }
   };
 };

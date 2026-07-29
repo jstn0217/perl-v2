@@ -1,130 +1,129 @@
-import bcrypt from 'bcrypt';
 import type { UserRecord } from '../../types/User.js';
 import type { IUserRepository } from '../interfaces/IUserRepository.js';
+import { createMockUsers } from './seeds.js';
 
-const hashPassword = (password: string) => bcrypt.hashSync(password, 10);
+let mockUsers: UserRecord[] = createMockUsers();
 
-const mockUsers: UserRecord[] = [
-  {
-    id: 'user-stmarys-admin',
-    schoolId: 'school-st-marys',
-    email: 'admin@demo.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Mara',
-    lastName: 'Santos',
-    role: 'ADMIN'
-  },
-  {
-    id: 'user-stmarys-staff',
-    schoolId: 'school-st-marys',
-    email: 'staff@stmarys.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Paolo',
-    lastName: 'Reyes',
-    role: 'STAFF'
-  },
-  {
-    id: 'user-stmarys-student',
-    schoolId: 'school-st-marys',
-    email: 'student@stmarys.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Lia',
-    lastName: 'Garcia',
-    role: 'STUDENT'
-  },
-  {
-    id: 'user-stmarys-guardian',
-    schoolId: 'school-st-marys',
-    email: 'guardian@stmarys.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Ana',
-    lastName: 'Garcia',
-    role: 'GUARDIAN'
-  },
-  {
-    id: 'user-riverside-admin',
-    schoolId: 'school-riverside',
-    email: 'admin@demo.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Rico',
-    lastName: 'Domingo',
-    role: 'ADMIN'
-  },
-  {
-    id: 'user-riverside-staff',
-    schoolId: 'school-riverside',
-    email: 'staff@riversidetech.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Tina',
-    lastName: 'Dela Cruz',
-    role: 'STAFF'
-  },
-  {
-    id: 'user-riverside-student',
-    schoolId: 'school-riverside',
-    email: 'student@riversidetech.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Noel',
-    lastName: 'Valdez',
-    role: 'STUDENT'
-  },
-  {
-    id: 'user-riverside-guardian',
-    schoolId: 'school-riverside',
-    email: 'guardian@riversidetech.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Ella',
-    lastName: 'Valdez',
-    role: 'GUARDIAN'
-  },
-  {
-    id: 'user-golden-admin',
-    schoolId: 'school-golden',
-    email: 'admin@goldenharvest.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Mico',
-    lastName: 'Tan',
-    role: 'ADMIN'
-  },
-  {
-    id: 'user-golden-staff',
-    schoolId: 'school-golden',
-    email: 'staff@goldenharvest.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Jessa',
-    lastName: 'Tan',
-    role: 'STAFF'
-  },
-  {
-    id: 'user-golden-student',
-    schoolId: 'school-golden',
-    email: 'student@goldenharvest.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Kian',
-    lastName: 'Flores',
-    role: 'STUDENT'
-  },
-  {
-    id: 'user-golden-guardian',
-    schoolId: 'school-golden',
-    email: 'guardian@goldenharvest.edu',
-    passwordHash: hashPassword('Password123!'),
-    firstName: 'Ruby',
-    lastName: 'Flores',
-    role: 'GUARDIAN'
-  }
-];
+export const resetMockUsers = () => {
+  mockUsers = createMockUsers();
+};
 
 export class MockUserRepository implements IUserRepository {
-  async findByEmailAndSchool(email: string, schoolId: string): Promise<UserRecord | null> {
+  async findByEmail(
+    email: string,
+    options?: { includeInactive?: boolean }
+  ): Promise<UserRecord | null> {
+    const matches = mockUsers.filter(
+      (user) =>
+        user.email.toLowerCase() === email.toLowerCase() &&
+        (options?.includeInactive ? true : user.isActive)
+    );
+
+    if (matches.length > 1) {
+      throw new Error('Multiple school accounts use this email. Contact system support.');
+    }
+
+    return matches[0] ?? null;
+  }
+
+  async findByEmailAndSchool(
+    email: string,
+    schoolId: string,
+    options?: { includeInactive?: boolean }
+  ): Promise<UserRecord | null> {
     return (
       mockUsers.find(
-        (user) => user.email.toLowerCase() === email.toLowerCase() && user.schoolId === schoolId
+        (user) =>
+          user.email.toLowerCase() === email.toLowerCase() &&
+          user.schoolId === schoolId &&
+          (options?.includeInactive ? true : user.isActive)
       ) ?? null
     );
   }
 
   async findById(userId: string): Promise<UserRecord | null> {
     return mockUsers.find((user) => user.id === userId) ?? null;
+  }
+
+  async findByCardUid(cardUid: string, options?: { includeInactive?: boolean }): Promise<UserRecord | null> {
+    return (
+      mockUsers.find(
+        (user) => user.cardUid === cardUid && (options?.includeInactive ? true : user.isActive)
+      ) ?? null
+    );
+  }
+
+  async findStudentByCardUid(cardUid: string): Promise<UserRecord | null> {
+    return (
+      mockUsers.find((user) => user.role === 'STUDENT' && user.cardUid === cardUid && user.isActive) ?? null
+    );
+  }
+
+  async listBySchool(schoolId: string): Promise<UserRecord[]> {
+    return mockUsers.filter((user) => user.schoolId === schoolId);
+  }
+
+  async create(user: UserRecord): Promise<UserRecord> {
+    if (mockUsers.some((entry) => entry.id === user.id)) {
+      throw new Error('A user with that ID already exists.');
+    }
+
+    if (
+      mockUsers.some(
+        (entry) => entry.email.toLowerCase() === user.email.toLowerCase()
+      )
+    ) {
+      throw new Error('A user with that email already exists.');
+    }
+
+    if (user.cardUid && mockUsers.some((entry) => entry.cardUid === user.cardUid)) {
+      throw new Error('A user with that card UID already exists.');
+    }
+
+    mockUsers.push(user);
+
+    return user;
+  }
+
+  async update(userId: string, schoolId: string, changes: Partial<UserRecord>): Promise<UserRecord | null> {
+    const user = mockUsers.find((entry) => entry.id === userId && entry.schoolId === schoolId);
+
+    if (!user) {
+      return null;
+    }
+
+    Object.assign(user, changes);
+
+    return user;
+  }
+
+  async deactivate(userId: string, schoolId: string): Promise<UserRecord | null> {
+    const user = mockUsers.find((entry) => entry.id === userId && entry.schoolId === schoolId);
+
+    if (!user) {
+      return null;
+    }
+
+    user.isActive = false;
+
+    return user;
+  }
+
+  async delete(userId: string, schoolId: string): Promise<boolean> {
+    const before = mockUsers.length;
+    mockUsers = mockUsers.filter((user) => user.id !== userId || user.schoolId !== schoolId);
+    return mockUsers.length < before;
+  }
+
+  async deleteBySchool(schoolId: string): Promise<number> {
+    const before = mockUsers.length;
+    mockUsers = mockUsers.filter((user) => user.schoolId !== schoolId);
+    return before - mockUsers.length;
+  }
+
+  async deleteBySchoolExcept(schoolId: string, userId: string): Promise<number> {
+    const before = mockUsers.length;
+    mockUsers = mockUsers.filter((user) => user.schoolId !== schoolId || user.id === userId);
+    return before - mockUsers.length;
   }
 }

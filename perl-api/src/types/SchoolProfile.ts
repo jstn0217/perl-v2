@@ -11,4 +11,6 @@ export interface SchoolProfile {
   logoUrl: string | null;
   theme: SchoolTheme;
   contactEmail: string;
+  smsEnabled: boolean;
+  smsSenderName: string | null;
 }

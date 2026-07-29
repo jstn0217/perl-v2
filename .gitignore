@@ -4,4 +4,4 @@ coverage
 .env
 .DS_Store
 *.log
-
+perl-rfid-device/device.conf

@@ -1,20 +1,40 @@
 import bcrypt from 'bcrypt';
 import type { IUserRepository } from '../repositories/interfaces/IUserRepository.js';
-import type { LoginResult, SessionUser, UserRecord, UserRole } from '../types/User.js';
+import type { IPlatformUserRepository } from '../repositories/interfaces/IPlatformUserRepository.js';
+import type {
+  LoginResult,
+  PlatformUserRecord,
+  SessionUser,
+  UserRecord,
+  UserRole
+} from '../types/User.js';
+import { isPlatformRole } from '../auth/permissions.js';
 
 export class AuthService {
-  constructor(private readonly userRepository: IUserRepository) {}
+  constructor(
+    private readonly userRepository: IUserRepository,
+    private readonly platformUserRepository: IPlatformUserRepository
+  ) {}
 
-  async login(email: string, password: string, schoolId: string): Promise<LoginResult> {
-    const user = await this.userRepository.findByEmailAndSchool(email, schoolId);
+  async login(email: string, password: string): Promise<LoginResult> {
+    const platformUser = await this.platformUserRepository.findByEmail(email);
 
-    if (!user) {
-      throw new Error('Invalid credentials.');
+    if (platformUser) {
+      const passwordMatches = await bcrypt.compare(password, platformUser.passwordHash);
+
+      if (!passwordMatches) {
+        throw new Error('Invalid credentials.');
+      }
+
+      return {
+        user: this.toPlatformSessionUser(platformUser)
+      };
     }
 
-    const passwordMatches = await bcrypt.compare(password, user.passwordHash);
+    const user = await this.userRepository.findByEmail(email);
+    const passwordMatches = user ? await bcrypt.compare(password, user.passwordHash) : false;
 
-    if (!passwordMatches) {
+    if (!user || !passwordMatches) {
       throw new Error('Invalid credentials.');
     }
 
@@ -26,15 +46,20 @@ export class AuthService {
   async getSessionUser(userId: string): Promise<SessionUser | null> {
     const user = await this.userRepository.findById(userId);
 
-    return user ? this.toSessionUser(user) : null;
+    if (user && user.isActive) {
+      return this.toSessionUser(user);
+    }
+
+    const platformUser = await this.platformUserRepository.findById(userId);
+    return platformUser ? this.toPlatformSessionUser(platformUser) : null;
   }
 
   assertRoleAccess(user: SessionUser, allowedRoles: UserRole[], schoolId: string) {
-    if (user.schoolId !== schoolId) {
+    if (!allowedRoles.includes(user.role)) {
       throw new Error('Forbidden');
     }
 
-    if (!allowedRoles.includes(user.role)) {
+    if (!isPlatformRole(user.role) && user.schoolId !== schoolId) {
       throw new Error('Forbidden');
     }
   }
@@ -43,6 +68,17 @@ export class AuthService {
     return {
       id: user.id,
       schoolId: user.schoolId,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role
+    };
+  }
+
+  private toPlatformSessionUser(user: PlatformUserRecord): SessionUser {
+    return {
+      id: user.id,
+      schoolId: null,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,

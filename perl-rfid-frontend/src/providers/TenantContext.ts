@@ -5,6 +5,8 @@ export interface TenantContextValue {
   activeSchool: SchoolProfile;
   schools: SchoolProfile[];
   setActiveSchoolSlug: (schoolSlug: string) => void;
+  setAuthenticatedSchool: (school: SchoolProfile, schools?: SchoolProfile[]) => void;
+  resetPublicSchool: () => void;
 }
 
 export const TenantContext = createContext<TenantContextValue | null>(null);

@@ -1,0 +1,131 @@
+import type { AttendanceLogRecord } from '../../types/Attendance.js';
+import type { DeviceRecord } from '../../types/Device.js';
+import type { SchoolProfile } from '../../types/SchoolProfile.js';
+import type { SchoolUserRole, UserRecord } from '../../types/User.js';
+
+interface SchoolRow {
+  id: string;
+  slug: string;
+  name: string;
+  logo_url: string | null;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  contact_email: string;
+  sms_enabled: number;
+  sms_sender_name: string | null;
+}
+
+interface UserRow {
+  id: string;
+  school_id: string;
+  email: string;
+  password_hash: string;
+  first_name: string;
+  last_name: string;
+  role: SchoolUserRole;
+  card_uid: string | null;
+  grade_level: string | null;
+  section: string | null;
+  image_url: string | null;
+  phone_number: string | null;
+  linked_student_ids: string | null;
+  is_active: number;
+}
+
+interface DeviceRow {
+  id: string;
+  school_id: string;
+  name: string;
+  location: string;
+  key_hash: string;
+  key_last_four: string;
+  is_active: number;
+}
+
+interface AttendanceLogRow {
+  id: string;
+  school_id: string;
+  user_id: string;
+  device_id: string;
+  direction: AttendanceLogRecord['direction'];
+  verdict: AttendanceLogRecord['verdict'];
+  denial_reason: AttendanceLogRecord['denialReason'];
+  message: string;
+  scanned_at: Date | string;
+}
+
+const toIsoString = (value: Date | string) => {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (value.includes('T')) {
+    return new Date(value.endsWith('Z') ? value : `${value}Z`).toISOString();
+  }
+
+  return new Date(`${value.replace(' ', 'T')}Z`).toISOString();
+};
+
+export const mapSchoolRow = (row: SchoolRow): SchoolProfile => ({
+  id: row.id,
+  slug: row.slug,
+  name: row.name,
+  logoUrl: row.logo_url,
+  theme: {
+    primaryColor: row.primary_color,
+    secondaryColor: row.secondary_color,
+    accentColor: row.accent_color
+  },
+  contactEmail: row.contact_email,
+  smsEnabled: Boolean(row.sms_enabled),
+  smsSenderName: row.sms_sender_name
+});
+
+export const mapUserRow = (row: UserRow): UserRecord => ({
+  id: row.id,
+  schoolId: row.school_id,
+  email: row.email,
+  passwordHash: row.password_hash,
+  firstName: row.first_name,
+  lastName: row.last_name,
+  role: row.role,
+  cardUid: row.card_uid,
+  gradeLevel: row.grade_level,
+  section: row.section,
+  imageUrl: row.image_url,
+  phoneNumber: row.phone_number,
+  linkedStudentIds: (() => {
+    try {
+      const parsed = JSON.parse(row.linked_student_ids ?? '[]');
+      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [];
+    } catch {
+      return [];
+    }
+  })(),
+  isActive: Boolean(row.is_active)
+});
+
+export const mapDeviceRow = (row: DeviceRow): DeviceRecord => ({
+  id: row.id,
+  schoolId: row.school_id,
+  name: row.name,
+  location: row.location,
+  keyHash: row.key_hash,
+  keyLastFour: row.key_last_four,
+  isActive: Boolean(row.is_active)
+});
+
+export const mapAttendanceRow = (row: AttendanceLogRow): AttendanceLogRecord => ({
+  id: row.id,
+  schoolId: row.school_id,
+  userId: row.user_id,
+  deviceId: row.device_id,
+  direction: row.direction,
+  verdict: row.verdict,
+  denialReason: row.denial_reason,
+  message: row.message,
+  scannedAt: toIsoString(row.scanned_at)
+});
+
+export type { AttendanceLogRow, DeviceRow, SchoolRow, UserRow };

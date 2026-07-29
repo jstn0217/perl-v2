@@ -1,0 +1,463 @@
+import bcrypt from 'bcrypt';
+import type { ITenantRepository } from '../repositories/interfaces/ITenantRepository.js';
+import type { IUserRepository } from '../repositories/interfaces/IUserRepository.js';
+import type { SchoolProfile } from '../types/SchoolProfile.js';
+import type { SchoolUserRole, UserRecord } from '../types/User.js';
+
+export interface ManagedUserView {
+  id: string;
+  schoolId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: SchoolUserRole;
+  cardUid: string | null;
+  gradeLevel: string | null;
+  section: string | null;
+  imageUrl: string | null;
+  phoneNumber: string | null;
+  linkedStudentIds: string[];
+  isActive: boolean;
+}
+
+export interface CreateManagedUserInput {
+  email?: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+  role?: SchoolUserRole;
+  cardUid?: string | null;
+  gradeLevel?: string | null;
+  section?: string | null;
+  imageUrl?: string | null;
+  phoneNumber?: string | null;
+  linkedStudentIds?: string[];
+}
+
+export interface UpdateManagedUserInput {
+  email?: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+  role?: SchoolUserRole;
+  cardUid?: string | null;
+  gradeLevel?: string | null;
+  section?: string | null;
+  imageUrl?: string | null;
+  phoneNumber?: string | null;
+  linkedStudentIds?: string[];
+}
+
+export interface ImportManagedUserInput extends Omit<CreateManagedUserInput, 'linkedStudentIds'> {
+  linkedStudentEmails?: string[];
+}
+
+export interface ImportManagedUserResult {
+  created: ManagedUserView[];
+  errors: Array<{ row: number; message: string }>;
+}
+
+export interface SchoolSummary {
+  school: SchoolProfile;
+  counts: {
+    totalUsers: number;
+    activeUsers: number;
+    inactiveUsers: number;
+    admins: number;
+    staff: number;
+    students: number;
+    guardians: number;
+  };
+}
+
+const validRoles: SchoolUserRole[] = ['ADMIN', 'STAFF', 'STUDENT', 'GUARDIAN'];
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const hexPattern = /^#[0-9a-fA-F]{6}$/;
+
+const normalizeOptionalString = (value: string | null | undefined) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  return normalized.length > 0 ? normalized : null;
+};
+
+const normalizeRequiredString = (value: string | undefined, field: string) => {
+  const normalized = value?.trim();
+
+  if (!normalized) {
+    throw new Error(`${field} is required.`);
+  }
+
+  return normalized;
+};
+
+const assertEmail = (value: string) => {
+  if (!emailPattern.test(value)) {
+    throw new Error('A valid email address is required.');
+  }
+};
+
+const assertRole = (value: string | undefined): SchoolUserRole => {
+  if (!value || !validRoles.includes(value as SchoolUserRole)) {
+    throw new Error('A valid role is required.');
+  }
+
+  return value as SchoolUserRole;
+};
+
+const assertPassword = (value: string | undefined) => {
+  if (!value || value.trim().length < 8) {
+    throw new Error('Password must be at least 8 characters.');
+  }
+
+  return value;
+};
+
+const assertHex = (value: string, label: string) => {
+  if (!hexPattern.test(value)) {
+    throw new Error(`${label} must be a valid hex color.`);
+  }
+};
+
+const assertUniqueCardUid = async (
+  userRepository: IUserRepository,
+  schoolId: string,
+  candidateCardUid: string | null | undefined,
+  currentUserId?: string
+) => {
+  if (!candidateCardUid) {
+    return;
+  }
+
+  const conflictingUser = await userRepository.findByCardUid(candidateCardUid, {
+    includeInactive: true
+  });
+
+  if (!conflictingUser || conflictingUser.id === currentUserId) {
+    return;
+  }
+
+  if (conflictingUser.schoolId === schoolId) {
+    throw new Error('A user with that card UID already exists for this school.');
+  }
+
+  throw new Error('Card UID values must remain unique across schools.');
+};
+
+export class AdminService {
+  constructor(
+    private readonly tenantRepository: ITenantRepository,
+    private readonly userRepository: IUserRepository
+  ) {}
+
+  async getSchoolSummary(schoolId: string): Promise<SchoolSummary> {
+    const [school, users] = await Promise.all([
+      this.requireSchool(schoolId),
+      this.userRepository.listBySchool(schoolId)
+    ]);
+
+    return {
+      school,
+      counts: {
+        totalUsers: users.length,
+        activeUsers: users.filter((user) => user.isActive).length,
+        inactiveUsers: users.filter((user) => !user.isActive).length,
+        admins: users.filter((user) => user.role === 'ADMIN').length,
+        staff: users.filter((user) => user.role === 'STAFF').length,
+        students: users.filter((user) => user.role === 'STUDENT').length,
+        guardians: users.filter((user) => user.role === 'GUARDIAN').length
+      }
+    };
+  }
+
+  async getSchoolProfile(schoolId: string): Promise<SchoolProfile> {
+    return this.requireSchool(schoolId);
+  }
+
+  async updateSchoolProfile(
+    schoolId: string,
+    input: Partial<Pick<SchoolProfile, 'name' | 'logoUrl' | 'contactEmail' | 'theme'>>
+  ): Promise<SchoolProfile> {
+    const existing = await this.requireSchool(schoolId);
+    const nextName = input.name !== undefined ? normalizeRequiredString(input.name, 'School name') : existing.name;
+    const nextContactEmail =
+      input.contactEmail !== undefined ? normalizeRequiredString(input.contactEmail, 'Contact email') : existing.contactEmail;
+    const nextLogoUrl = input.logoUrl !== undefined ? normalizeOptionalString(input.logoUrl) : existing.logoUrl;
+    const nextTheme = {
+      primaryColor: input.theme?.primaryColor ?? existing.theme.primaryColor,
+      secondaryColor: input.theme?.secondaryColor ?? existing.theme.secondaryColor,
+      accentColor: input.theme?.accentColor ?? existing.theme.accentColor
+    };
+
+    assertEmail(nextContactEmail);
+    assertHex(nextTheme.primaryColor, 'Primary color');
+    assertHex(nextTheme.secondaryColor, 'Secondary color');
+    assertHex(nextTheme.accentColor, 'Accent color');
+
+    const updated = await this.tenantRepository.updateSchoolProfile(schoolId, {
+      name: nextName,
+      logoUrl: nextLogoUrl,
+      contactEmail: nextContactEmail,
+      theme: nextTheme
+    });
+
+    if (!updated) {
+      throw new Error('School not found.');
+    }
+
+    return updated;
+  }
+
+  async listUsers(schoolId: string): Promise<ManagedUserView[]> {
+    await this.requireSchool(schoolId);
+    const users = await this.userRepository.listBySchool(schoolId);
+
+    return users.map((user) => this.toManagedUserView(user));
+  }
+
+  async createUser(schoolId: string, input: CreateManagedUserInput): Promise<ManagedUserView> {
+    await this.requireSchool(schoolId);
+
+    const email = normalizeRequiredString(input.email, 'Email').toLowerCase();
+    const firstName = normalizeRequiredString(input.firstName, 'First name');
+    const lastName = normalizeRequiredString(input.lastName, 'Last name');
+    const role = assertRole(input.role);
+    const password = assertPassword(input.password);
+
+    assertEmail(email);
+
+    const existingUser = await this.userRepository.findByEmail(email, {
+      includeInactive: true
+    });
+
+    if (existingUser) {
+      throw new Error('A user with that email already exists.');
+    }
+
+    const cardUid = normalizeOptionalString(input.cardUid);
+    const linkedStudentIds =
+      role === 'GUARDIAN'
+        ? await this.assertLinkedStudents(schoolId, input.linkedStudentIds ?? [])
+        : [];
+
+    await assertUniqueCardUid(this.userRepository, schoolId, cardUid);
+
+    const user: UserRecord = {
+      id: `user-${schoolId}-${Date.now()}`,
+      schoolId,
+      email,
+      passwordHash: await bcrypt.hash(password, 10),
+      firstName,
+      lastName,
+      role,
+      cardUid: cardUid ?? null,
+      gradeLevel: normalizeOptionalString(input.gradeLevel) ?? null,
+      section: normalizeOptionalString(input.section) ?? null,
+      imageUrl: normalizeOptionalString(input.imageUrl) ?? null,
+      phoneNumber: normalizeOptionalString(input.phoneNumber) ?? null,
+      linkedStudentIds,
+      isActive: true
+    };
+
+    const created = await this.userRepository.create(user);
+
+    return this.toManagedUserView(created);
+  }
+
+  async importUsers(
+    schoolId: string,
+    rows: ImportManagedUserInput[]
+  ): Promise<ImportManagedUserResult> {
+    await this.requireSchool(schoolId);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error('Import must contain at least one user row.');
+    }
+    if (rows.length > 500) {
+      throw new Error('Import is limited to 500 user rows at a time.');
+    }
+
+    const indexedRows = rows.map((input, index) => ({ input, row: index + 2 }));
+    const orderedRows = [
+      ...indexedRows.filter(({ input }) => input.role !== 'GUARDIAN'),
+      ...indexedRows.filter(({ input }) => input.role === 'GUARDIAN')
+    ];
+    const created: ManagedUserView[] = [];
+    const errors: ImportManagedUserResult['errors'] = [];
+
+    for (const { input, row } of orderedRows) {
+      try {
+        const linkedStudentIds: string[] = [];
+        if (input.role === 'GUARDIAN') {
+          for (const linkedEmail of input.linkedStudentEmails ?? []) {
+            const student = await this.userRepository.findByEmail(linkedEmail.trim().toLowerCase());
+            if (!student || student.schoolId !== schoolId || student.role !== 'STUDENT') {
+              throw new Error(`Linked student ${linkedEmail} was not found in this school.`);
+            }
+            linkedStudentIds.push(student.id);
+          }
+        }
+        created.push(await this.createUser(schoolId, { ...input, linkedStudentIds }));
+      } catch (error) {
+        errors.push({
+          row,
+          message: error instanceof Error ? error.message : 'Unable to import this user.'
+        });
+      }
+    }
+
+    return { created, errors: errors.sort((left, right) => left.row - right.row) };
+  }
+
+  async updateUser(schoolId: string, userId: string, input: UpdateManagedUserInput): Promise<ManagedUserView> {
+    const existing = await this.requireSchoolUser(schoolId, userId);
+    const changes: Partial<UserRecord> = {};
+
+    if (input.email !== undefined) {
+      const email = normalizeRequiredString(input.email, 'Email').toLowerCase();
+      assertEmail(email);
+
+      const conflicting = await this.userRepository.findByEmail(email, {
+        includeInactive: true
+      });
+
+      if (conflicting && conflicting.id !== userId) {
+        throw new Error('A user with that email already exists.');
+      }
+
+      changes.email = email;
+    }
+
+    if (input.firstName !== undefined) {
+      changes.firstName = normalizeRequiredString(input.firstName, 'First name');
+    }
+
+    if (input.lastName !== undefined) {
+      changes.lastName = normalizeRequiredString(input.lastName, 'Last name');
+    }
+
+    if (input.role !== undefined) {
+      changes.role = assertRole(input.role);
+    }
+
+    if (input.password !== undefined) {
+      changes.passwordHash = await bcrypt.hash(assertPassword(input.password), 10);
+    }
+
+    if (input.cardUid !== undefined) {
+      changes.cardUid = normalizeOptionalString(input.cardUid);
+      await assertUniqueCardUid(this.userRepository, schoolId, changes.cardUid, userId);
+    }
+
+    if (input.gradeLevel !== undefined) {
+      changes.gradeLevel = normalizeOptionalString(input.gradeLevel);
+    }
+
+    if (input.section !== undefined) {
+      changes.section = normalizeOptionalString(input.section);
+    }
+
+    if (input.imageUrl !== undefined) {
+      changes.imageUrl = normalizeOptionalString(input.imageUrl);
+    }
+
+    if (input.phoneNumber !== undefined) {
+      changes.phoneNumber = normalizeOptionalString(input.phoneNumber);
+    }
+
+    const nextRole = changes.role ?? existing.role;
+    if (input.linkedStudentIds !== undefined) {
+      changes.linkedStudentIds =
+        nextRole === 'GUARDIAN'
+          ? await this.assertLinkedStudents(schoolId, input.linkedStudentIds)
+          : [];
+    } else if (input.role !== undefined && nextRole !== 'GUARDIAN') {
+      changes.linkedStudentIds = [];
+    }
+
+    const updated = await this.userRepository.update(existing.id, schoolId, changes);
+
+    if (!updated) {
+      throw new Error('User not found.');
+    }
+
+    return this.toManagedUserView(updated);
+  }
+
+  async deactivateUser(schoolId: string, userId: string, actorUserId: string): Promise<ManagedUserView> {
+    if (userId === actorUserId) {
+      throw new Error('You cannot deactivate your own account.');
+    }
+
+    const existing = await this.requireSchoolUser(schoolId, userId);
+
+    if (!existing.isActive) {
+      return this.toManagedUserView(existing);
+    }
+
+    const updated = await this.userRepository.deactivate(userId, schoolId);
+
+    if (!updated) {
+      throw new Error('User not found.');
+    }
+
+    return this.toManagedUserView(updated);
+  }
+
+  private async requireSchool(schoolId: string): Promise<SchoolProfile> {
+    const school = await this.tenantRepository.findSchoolById(schoolId);
+
+    if (!school) {
+      throw new Error('School not found.');
+    }
+
+    return school;
+  }
+
+  private async requireSchoolUser(schoolId: string, userId: string): Promise<UserRecord> {
+    const user = await this.userRepository.findById(userId);
+
+    if (!user || user.schoolId !== schoolId) {
+      throw new Error('User not found.');
+    }
+
+    return user;
+  }
+
+  private async assertLinkedStudents(schoolId: string, studentIds: string[]): Promise<string[]> {
+    const uniqueStudentIds = [...new Set(studentIds)];
+
+    for (const studentId of uniqueStudentIds) {
+      const student = await this.userRepository.findById(studentId);
+      if (!student || student.schoolId !== schoolId || student.role !== 'STUDENT') {
+        throw new Error('Guardian links must reference students from the same school.');
+      }
+    }
+
+    return uniqueStudentIds;
+  }
+
+  private toManagedUserView(user: UserRecord): ManagedUserView {
+    return {
+      id: user.id,
+      schoolId: user.schoolId,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      cardUid: user.cardUid,
+      gradeLevel: user.gradeLevel,
+      section: user.section,
+      imageUrl: user.imageUrl,
+      phoneNumber: user.phoneNumber ?? null,
+      linkedStudentIds: user.linkedStudentIds ?? [],
+      isActive: user.isActive
+    };
+  }
+}

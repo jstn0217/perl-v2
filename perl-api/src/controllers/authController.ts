@@ -23,7 +23,10 @@ const clearSessionCookie = (res: Response) => {
 };
 
 export const createAuthController = (repositories: RepositorySet) => {
-  const authService = new AuthService(repositories.userRepository);
+  const authService = new AuthService(
+    repositories.userRepository,
+    repositories.platformUserRepository
+  );
   const tenantService = new TenantService(repositories.tenantRepository);
 
   return {
@@ -32,16 +35,16 @@ export const createAuthController = (repositories: RepositorySet) => {
         email?: string;
         password?: string;
       };
-      const requestedSlug = typeof req.body?.schoolSlug === 'string' ? req.body.schoolSlug : undefined;
-      const school = await tenantService.getCurrentSchool(requestedSlug);
-
       if (!email || !password) {
         return res.status(400).json({ message: 'Email and password are required.' });
       }
 
       try {
-        const { user } = await authService.login(email, password, school.id);
+        const { user } = await authService.login(email, password);
         const token = createSessionToken(user);
+        const school = user.schoolId
+          ? await tenantService.getSchoolById(user.schoolId)
+          : null;
 
         setSessionCookie(res, token);
         return res.json({ user, school });
@@ -60,7 +63,10 @@ export const createAuthController = (repositories: RepositorySet) => {
         return res.json({ authenticated: false, user: null });
       }
 
-      return res.json({ authenticated: true, user: req.currentUser });
+      const school = req.currentUser.schoolId
+        ? await tenantService.getSchoolById(req.currentUser.schoolId)
+        : null;
+      return res.json({ authenticated: true, user: req.currentUser, school });
     }
   };
 };

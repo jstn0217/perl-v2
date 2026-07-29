@@ -32,7 +32,7 @@ v2.0 was directionally right (multi-tenant SaaS, not a single-school deployment)
 |---|---|---|
 | Stripe billing service (`perl-billing`) in Sprint 4 | No paying customer yet exists to bill. Building this before the core product is validated is speculative work — YAGNI. | Billing is a phase near the *end*, gated on "we have a school that wants to pay us." |
 | Redis pub/sub for `perl-ws` from Sprint 0 | Solves a scaling/isolation problem we don't have yet with zero tenants. Adds an infra dependency before there's a feature to scale. | Start with a single in-process event emitter. Introduce Redis only when we actually have concurrent multi-tenant WS load (see [Section 8](#8-deferred-work-explicitly-not-built-yet-and-why)). |
-| Platform admin console + `SUPER_ADMIN` impersonation in Sprint 5 | Support tooling for a product with no support tickets yet. | Deferred until Phase 8 (post real-DB, pre-launch). |
+| Platform admin console + `SUPER_ADMIN` impersonation in Sprint 5 | Support tooling was premature before a concrete cross-school support workflow existed. | Activated as Phase 9 after the product owner requested tenant provisioning, cross-school support, and globally-audited support changes. |
 | MySQL + full tenant-isolation test suite as a day-one requirement | You cannot validate "does the core attendance feature even work and feel right" without first standing up a full database and isolation layer. That's backwards — it's expensive to change data models once real data and migrations exist. | **Mock data first.** Build and demo every core feature against an in-memory data layer. Swap to a real database only once the feature set and shape of the data are proven (Phase 6). |
 | DPIA / NPC registration / DPA templates in Sprint 5 | Real, necessary, but compliance work belongs right before public launch with real student data — not before we know the product works. | Moved to the final pre-launch phase, unchanged in substance. |
 
@@ -100,16 +100,16 @@ interface SchoolProfile {
 }
 ```
 
-- The frontend resolves the current school (by subdomain in real deployments, by a simple `?school=` param or local dropdown in mock/dev mode) and loads its `SchoolProfile` **before** rendering the app shell.
+- The public homepage and login stay platform-generic and never expose a school selector or client list. After authentication, the backend resolves the school from the account, stores its `schoolId` in the signed JWT, and returns the corresponding `SchoolProfile` before rendering the authenticated app shell.
 - A `ThemeProvider` component applies `theme.*` as CSS variables and swaps in `logoUrl` and `name` wherever branding appears (header, login page, email templates later).
 - This is proven in **Phase 1**, against two or three mock schools with visibly different names/logos/colors, specifically so we catch "did we hardcode the school name somewhere" mistakes immediately, while it's cheap to fix.
 - Nothing here requires a database — mock `SchoolProfile` records are enough to build and demo the entire theming system.
 
 ---
 
-## 5. Roles (kept intentionally simple)
+## 5. Roles
 
-We are **not** introducing a separate platform/`SUPER_ADMIN` table yet (v2.0 did this in Sprint 0 — deferred here, see [Section 8](#8-deferred-work-explicitly-not-built-yet-and-why)). Until we have paying tenants needing support tooling, one role set is enough:
+School users stay in the tenant-scoped user repository. The concrete support and school-provisioning requirement introduced in Phase 9 adds a separate platform-user repository for `SYSTEM_ADMIN` and `SUPPORT`; platform users have no home `schoolId` and must select an explicit, audited support context before working inside a school.
 
 | Role | Description |
 |---|---|
@@ -117,8 +117,10 @@ We are **not** introducing a separate platform/`SUPER_ADMIN` table yet (v2.0 did
 | `STAFF` | Non-student card holder |
 | `STUDENT` | RFID card holder, attendance subject |
 | `GUARDIAN` | Notification recipient, scoped to their linked student(s) |
+| `SYSTEM_ADMIN` | Platform administrator who can provision schools and manage any selected school through the audited platform workspace |
+| `SUPPORT` | Read-only cross-school support user who can inspect records, view global logs, and use monitor diagnostics without changing school data |
 
-Every user record carries a `schoolId` (the mock-data-era name for what becomes `tenant_id` once the DB is introduced — see Phase 6 for the rename/migration note). Scoping by `schoolId` is enforced in the service layer from day one, even against mock data, so the habit and the tests exist before real data is at stake.
+Every school-user record carries a `schoolId` (the mock-data-era name for what becomes `school_id` once the DB is introduced). The signed JWT also carries this value, and ordinary backend requests derive their school from the verified session rather than client-supplied school input. Platform-user JWTs carry `schoolId: null`; their explicit target school is authorized separately and all support access and system-admin mutations are audited.
 
 ---
 
@@ -150,6 +152,8 @@ Each phase = one feature, demoable end-to-end, with its own checklist. Do not st
 - [ ] Unit tests for `TenantService.getCurrentSchool()` against the mock repository (real logic, not a stub)
 - [ ] Changelog entry
 
+> Superseded by Phase 9: the Phase 1 selector was useful for proving mock branding, but it is no longer public product UX. The authenticated account/JWT now resolves school context.
+
 ### Phase 2 — Auth & Roles (mock)
 
 **Goal:** login, session, and role-based access, scoped per school, still no database.
@@ -179,6 +183,7 @@ Each phase = one feature, demoable end-to-end, with its own checklist. Do not st
 
 - [ ] Admin UI: edit `SchoolProfile` (name, logo, theme colors) — read-modify-write against the mock repository, confirms Phase 1's theming updates live
 - [ ] Admin UI: list/add/edit/deactivate users within their own school only (enforce `schoolId` scoping in the service layer, not just the UI)
+- [ ] Admin UI: filter/export the current People roster and import up to 500 users from the versioned CSV template with row-level validation
 - [ ] Changelog entry
 
 ### Phase 5 — Device Registration (mock)
@@ -223,7 +228,23 @@ Each phase = one feature, demoable end-to-end, with its own checklist. Do not st
 - [ ] Backup + restore tested for a single school's data, not just a full-database restore
 - [ ] Changelog entry
 
-*(Billing, Redis-scaled realtime, and a platform admin console are intentionally not phases yet — see [Section 8](#8-deferred-work-explicitly-not-built-yet-and-why).)*
+### Phase 9 — Platform Support, School Provisioning & Role-Scoped Self-Service
+
+**Goal:** provide the now-required multi-school support workflow without exposing the client base publicly or weakening tenant boundaries.
+
+- [x] Add separately persisted `SYSTEM_ADMIN` and `SUPPORT` platform users and seed both initial mock/database accounts
+- [x] Keep the homepage/login generic; resolve ordinary users' schools from their accounts and signed JWT `schoolId`
+- [x] Protect the school directory, allow only `SYSTEM_ADMIN` to create a new `SchoolProfile`, and keep `SUPPORT` cross-school access read-only
+- [x] Require explicit support context for cross-school operations and audit access, provisioning, and support-initiated mutations by actor and school
+- [x] Add a global, filterable system action-log page for platform administrators and support
+- [x] Keep monitor scan simulation and saved-record diagnostics support-only while school staff/admins retain the live device stream
+- [x] Add filters and matching full-result CSV exports to operational record lists
+- [x] Let school admins manage tenant-scoped staff, students, guardians, and guardian/student links
+- [x] Scope attendance views by role: school-wide for admin/staff, self-only for students, and linked-student-only for guardians
+- [x] Add mock/database repository parity and integration coverage
+- [x] Changelog entry
+
+*(Billing and Redis-scaled realtime are still intentionally deferred; see [Section 8](#8-deferred-work-explicitly-not-built-yet-and-why).)*
 
 ---
 
@@ -245,7 +266,7 @@ Listed here on purpose, so no agent "helpfully" builds these early — that's ex
 |---|---|
 | Stripe billing (`perl-billing` service) | A real school is ready to pay, i.e., right after Phase 8 or when the first paying pilot is confirmed. |
 | Redis pub/sub for realtime | We observe actual multi-tenant concurrent WS load that a single in-process broadcaster can't handle — not before. |
-| Platform admin console / `SUPER_ADMIN` role / impersonation | We have more than a couple of tenants and a real support workflow need. |
+| Platform admin console / `SUPER_ADMIN` role / impersonation | **Activated in Phase 9:** the product owner supplied the concrete provisioning and cross-school support workflow. |
 | Custom domains per tenant (beyond subdomain) | An Enterprise-tier customer actually asks for it. |
 | Database-per-tenant / schema isolation option | A customer's contract or compliance requirement demands it — the shared-DB-with-`school_id`-scoping model is sufficient until then. |
 | Multi-region infrastructure | Latency or regulatory requirements actually demand it. |

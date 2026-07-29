@@ -4,7 +4,7 @@ import type { SessionUser, UserRole } from '../types/User.js';
 
 interface SessionTokenPayload {
   sub: string;
-  schoolId: string;
+  schoolId: string | null;
   role: UserRole;
 }
 
@@ -31,7 +31,7 @@ export const verifySessionToken = (token: string): SessionTokenPayload => {
 
   const { sub, schoolId, role } = payload as Partial<SessionTokenPayload>;
 
-  if (!sub || !schoolId || !role) {
+  if (!sub || schoolId === undefined || !role) {
     throw new Error('Session token payload is incomplete.');
   }
 

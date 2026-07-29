@@ -1,20 +1,11 @@
 import { useState } from 'react';
+import { SchoolMark } from '../components/SchoolMark';
 import { useAuth } from '../providers/auth-context';
 import { useSchoolTheme } from '../providers/SchoolThemeContext';
-import { useTenantContext } from '../providers/TenantContext';
-
-const SchoolMark = ({ name, logoUrl }: { name: string; logoUrl: string | null }) => {
-  if (logoUrl) {
-    return <img className="school-mark" src={logoUrl} alt={`${name} logo`} />;
-  }
-
-  return <div className="school-mark school-mark--fallback">{name.slice(0, 2).toUpperCase()}</div>;
-};
 
 export const LoginPage = () => {
-  const { activeSchool, schools, setActiveSchoolSlug } = useTenantContext();
   const { school } = useSchoolTheme();
-  const { login, status, error, clearError } = useAuth();
+  const { login, status, error } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -38,51 +29,33 @@ export const LoginPage = () => {
             <div className="brand-lockup">
               <SchoolMark name={school.name} logoUrl={school.logoUrl} />
               <div>
-                <p className="eyebrow">Phase 2</p>
-                <h1>Sign in to {school.name}</h1>
+                <p className="eyebrow">PERL attendance</p>
+                <h1>Sign in to your school</h1>
               </div>
             </div>
-
-            <label className="school-switcher">
-              <span>School context</span>
-              <select
-                value={activeSchool.slug}
-                onChange={(event) => {
-                  clearError();
-                  setActiveSchoolSlug(event.target.value);
-                }}
-                aria-label="Switch school login context"
-              >
-                {schools.map((availableSchool) => (
-                  <option key={availableSchool.id} value={availableSchool.slug}>
-                    {availableSchool.name}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
 
           <div className="auth-grid">
             <div className="auth-copy">
               <p className="description">
-                Login stays bound to the selected school context. Cookie-based session handling and
-                protected routing now work against the mock-backed Phase 2 API.
+                Your account securely identifies your school and opens the correct workspace.
               </p>
 
               <div className="preview-panel preview-panel--primary">
-                <p className="panel-label">What this slice proves</p>
+                <p className="panel-label">Built for the school day</p>
                 <ul className="promise-list promise-list--light">
-                  <li>The login page inherits school branding before it renders.</li>
-                  <li>Public and protected routes are separated now, not bolted on later.</li>
-                  <li>Requests already use credentialed fetch calls for HttpOnly cookie sessions.</li>
+                  <li>See each scan as it happens at the gate.</li>
+                  <li>Review attendance records without leaving your school context.</li>
+                  <li>Manage people and devices from one protected workspace.</li>
                 </ul>
               </div>
             </div>
 
             <form className="login-card" onSubmit={handleSubmit}>
               <div className="login-card__header">
-                <p className="panel-label">Staff access</p>
-                <p className="login-card__hint">{school.contactEmail}</p>
+                <p className="panel-label">Account sign in</p>
+                <h2>Access your workspace</h2>
+                <p className="login-card__hint">No school code or public directory required.</p>
               </div>
 
               <label className="field">
@@ -93,7 +66,7 @@ export const LoginPage = () => {
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder={`you@${school.slug}.edu`}
+                  placeholder="you@school.edu"
                   required
                 />
               </label>
@@ -116,8 +89,7 @@ export const LoginPage = () => {
                 </div>
               ) : (
                 <div className="form-message">
-                  Demo users are seeded per school. Use the selected school context and the shared
-                  password `Password123!` for the sample accounts.
+                  Your school is resolved from your account after your credentials are verified.
                 </div>
               )}
 

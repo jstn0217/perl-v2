@@ -2,15 +2,53 @@
 
 ## Purpose
 
-This document consolidates the prior planning documents into one source of truth for the rebuild. It summarizes the current legacy implementation under `existing/`, maps those findings to the mock-first rebuild in [AGENTS.md](/Users/jmendoza/Desktop/Documents/Work_Code/sandbox/perl-v2/AGENTS.md), and turns Phase 0 into an executable starting sequence.
+This document consolidates the prior planning documents into one source of truth for the rebuild. It summarizes the legacy implementation under `existing/`, maps those findings to the mock-first rebuild in [AGENTS.md](/Users/jmendoza/Desktop/Documents/Work_Code/sandbox/perl-v2/AGENTS.md), and records the current implementation and remaining launch gates.
 
-It is intentionally evidence-based. Statements about the legacy app come from the current codebase, not just earlier roadmap text.
+It is intentionally evidence-based. `AGENTS.md` remains authoritative for phase scope and order; this file records implementation status and supporting decisions.
 
 ## Current Repo State
 
-- The repo root does not yet contain the rebuilt app. It currently contains planning documents plus a legacy implementation under `existing/`.
-- `AGENTS.md` says Phase 0 has not started yet.
-- `planning/CHANGELOG.md` currently records planning-level history and roadmap revisions.
+- The rebuilt applications now live at `perl-api/` and `perl-rfid-frontend/`; the legacy implementation under `existing/` remains reference material only.
+- Mock mode remains the development default, while the Phase 6 MySQL repository implementations are selectable through `DATA_LAYER=db`.
+- The current worktree contains implementation work spanning Phases 0–8. This does not make every phase release-complete: acceptance still requires proportionate verification, an intentional commit, and the unresolved Phase 8 organizational approvals below.
+- `planning/CHANGELOG.md` records both code and planning changes under `[Unreleased]`.
+
+## Implementation Status — 2026-07-29
+
+| Phase | Current evidence | Status |
+|---|---|---|
+| 0 — Scaffolding | Both TypeScript apps, repository ports, mock composition, lint/build/test tooling, and mock boot path exist. | Implemented |
+| 1 — Branding | Three seeded schools, current-school resolution, pre-shell theme loading, and tenant-service coverage exist. | Implemented |
+| 2 — Auth | Bcrypt credentials, HttpOnly JWT cookie sessions, role guards, protected routing, and school-isolation coverage exist. | Implemented |
+| 3 — Attendance | Device scan API, centralized admit/deny rules, school-scoped SSE monitor, and paginated logs exist. | Implemented |
+| 4 — School admin | Profile, logo/theme, and school-scoped user-management API/UI flows exist. | Implemented |
+| 5 — Devices | Device registration, one-time keys, scoped scan authorization, rotation/revocation, and simulator script exist. | Implemented |
+| 6 — Persistence | MySQL schema, DB repositories, seed/reset flow, Docker wiring, and shared mock/DB API behavior harness exist. | Implemented; DB verification requires available MySQL |
+| 7 — Hardening | Explicit CORS, session expiry checks, route-family isolation coverage, rate limits, and dependency-audit command exist. | Controls implemented; audit gate open |
+| 8 — Compliance & ops | DPIA, DPA template, incident runbook, data export/erasure, backup/restore, and audit operations exist. | In progress; pre-launch approvals and operational exercises remain |
+
+### Current product/UI update
+
+- The authenticated interface is now organized around operational tasks: live monitoring, attendance review, people, devices, and school profile.
+- User-facing phase/debug language has been removed from the dashboard and login experience.
+- Navigation has clearer product labels, grouped administration links, keyboard focus treatment, horizontal overflow on compact screens, and reduced-motion support.
+- Rendered Chrome review at 1440px and emulated 390px widths now confirms zero document-level horizontal overflow on login, overview, and live-monitor paths; compact navigation exposes administration as a dedicated second row, and the live result remains centered and readable across both viewports.
+- The live attendance surface now prioritizes the current gate event: an always-visible clock, centered student photo and identity, clear admit/deny state, grade/section, direction, scanner, location, and recorded time occupy the primary viewport, while simulation, device management, and earlier activity remain supporting content below.
+- Frontend code now separates atomic reusable `components/`, composed reusable `modules/`, and routed `pages/`; pages own route-level data coordination, while school identity and attendance presentation are shared instead of duplicated inside page files.
+- The authenticated shell now uses a reusable hamburger navigation drawer, growing attendance/people/device collections share pagination, and people/device creation or editing opens in reusable modal dialogs. People and device pagination is currently client-side and is explicitly tracked for server-side migration in `planning/SCALABLE-FRONTEND-TODO.md`.
+- No frontend test framework or low-value UI tests were added; verification remains lint, TypeScript/Vite build, and rendered-path review.
+
+### Remaining launch gates
+
+These are required before real student data is approved:
+
+- complete school-specific DPIA facts, lawful-basis decisions, retention schedule, hosting/subprocessor details, and risk-owner sign-off;
+- complete and obtain counsel/DPO review of the DPA, then execute it with the pilot school;
+- name incident contacts, verify DBNMS access, approve the runbook, and record a tabletop exercise;
+- test encrypted backup storage and a school-scoped restore in the intended production environment;
+- run the API/frontend lint and build gates, API tests against mock and MySQL, and HIGH/CRITICAL dependency audits;
+- resolve or upstream-clear the current HIGH advisories: React Router has no audit-clean published version in the checked range, while the API's remaining findings are confined to Jest's development-only transitive dependency tree; production API dependencies currently audit clean;
+- perform final responsive, keyboard, and contrast review with representative school themes and real-length content.
 
 ## Legacy System Inventory
 
@@ -493,17 +531,18 @@ Pagination should be treated as a baseline contract, not a later optimization. N
 
 ## Immediate Recommendation
 
-Start Phase 0 from scratch at the repo root, keep `existing/` untouched as reference, and treat the legacy code as a source for:
+Stabilize the current implementation instead of starting another feature phase:
 
-- field names worth preserving
-- user flows worth preserving
-- anti-patterns that the new architecture must not repeat
+1. verify the UI refinement and existing feature paths without adding speculative frontend tests;
+2. run the mock-mode quality gates, then the MySQL parity suite when the database is available;
+3. keep Phase 8 marked in progress until the school-specific approvals, named owners, and operational exercises are complete;
+4. continue Phase 9 platform administration only within the product-owner-approved school provisioning, role-scoped access, and audited support workflow; billing and Redis realtime remain deferred until their separate triggers in `AGENTS.md`.
 
-## Phase 0 Execution Plan
+## Historical Phase 0 Execution Plan
 
 ## Purpose
 
-This section turns `AGENTS.md` Phase 0 into an executable sequence for the rebuild.
+This section preserves the execution plan used to start the rebuild. Phase 0 has since been implemented; it is retained as historical rationale, not as the next-action list.
 
 It is intentionally narrow: this is not the full product roadmap. It is the start plan for creating a clean, maintainable foundation that replaces the legacy structure in `existing/`.
 
@@ -670,7 +709,6 @@ Phase 0 should stay intentionally small.
 Required:
 
 - test runner configured for backend
-- at least one smoke test or placeholder test proving the test setup runs
 
 Optional:
 
@@ -755,10 +793,4 @@ Phase 0 is done when all of the following are true:
 
 ## Recommended Next Action
 
-Start the rebuild by scaffolding:
-
-1. `perl-api`
-2. `perl-rfid-frontend`
-3. repository interface folders
-4. mock composition root
-5. boot verification endpoints and placeholder UI
+Complete a release-candidate verification pass over the existing implementation, close or explicitly assign every Phase 8 launch gate, and only then mark the active rebuild phase complete.

@@ -1,11 +1,15 @@
-import { MockUserRepository } from '../src/repositories/mock/MockUserRepository.js';
 import { AuthService } from '../src/services/AuthService.js';
+import { createRepositories, describeForDataLayers } from './helpers/dataLayer.js';
 
-describe('AuthService.login', () => {
+describeForDataLayers('AuthService.login', (dataLayer) => {
   it('authenticates a school-scoped user with valid credentials', async () => {
-    const service = new AuthService(new MockUserRepository());
+    const repositories = createRepositories(dataLayer);
+    const service = new AuthService(
+      repositories.userRepository,
+      repositories.platformUserRepository
+    );
 
-    await expect(service.login('admin@demo.edu', 'Password123!', 'school-st-marys')).resolves.toMatchObject({
+    await expect(service.login('admin@stmarys.edu', 'Password123!')).resolves.toMatchObject({
       user: {
         schoolId: 'school-st-marys',
         role: 'ADMIN'
@@ -13,18 +17,26 @@ describe('AuthService.login', () => {
     });
   });
 
-  it('rejects the same email when the login is scoped to the wrong school', async () => {
-    const service = new AuthService(new MockUserRepository());
-
-    await expect(service.login('admin@demo.edu', 'Password123!', 'school-golden')).rejects.toThrow(
-      'Invalid credentials.'
+  it('derives the school from the account instead of client-provided tenant context', async () => {
+    const repositories = createRepositories(dataLayer);
+    const service = new AuthService(
+      repositories.userRepository,
+      repositories.platformUserRepository
     );
+
+    await expect(service.login('admin@stmarys.edu', 'Password123!')).resolves.toMatchObject({
+      user: { schoolId: 'school-st-marys' }
+    });
   });
 
   it('rejects invalid passwords', async () => {
-    const service = new AuthService(new MockUserRepository());
+    const repositories = createRepositories(dataLayer);
+    const service = new AuthService(
+      repositories.userRepository,
+      repositories.platformUserRepository
+    );
 
-    await expect(service.login('admin@demo.edu', 'WrongPassword!', 'school-st-marys')).rejects.toThrow(
+    await expect(service.login('admin@stmarys.edu', 'WrongPassword!')).rejects.toThrow(
       'Invalid credentials.'
     );
   });

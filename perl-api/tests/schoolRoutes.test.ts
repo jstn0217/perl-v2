@@ -1,13 +1,21 @@
 import request from 'supertest';
 import { createApp } from '../src/app.js';
-import { createRepositories } from '../src/repositories/index.js';
+import { createRepositories, describeForDataLayers } from './helpers/dataLayer.js';
 
-describe('GET /api/school/current', () => {
-  it('returns the resolved school and the demo school list in one payload', async () => {
-    const app = createApp(createRepositories('mock'));
+describeForDataLayers('GET /api/school/current', (dataLayer) => {
+  it('does not expose the client list publicly and derives the school from the session', async () => {
+    const app = createApp(createRepositories(dataLayer));
 
-    const response = await request(app).get('/api/school/current?school=riverside-tech');
+    const publicResponse = await request(app).get('/api/school/current');
+    expect(publicResponse.status).toBe(401);
 
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@riversidetech.edu',
+      password: 'Password123!'
+    });
+    const response = await request(app)
+      .get('/api/school/current?school=st-marys')
+      .set('Cookie', loginResponse.headers['set-cookie'][0]);
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       school: {
@@ -15,11 +23,6 @@ describe('GET /api/school/current', () => {
         name: 'Riverside Technical Institute'
       }
     });
-    expect(response.body.schools).toHaveLength(3);
-    expect(response.body.schools.map((school: { slug: string }) => school.slug)).toEqual([
-      'st-marys',
-      'riverside-tech',
-      'golden-harvest'
-    ]);
+    expect(response.body.schools).toBeUndefined();
   });
 });
