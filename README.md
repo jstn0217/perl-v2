@@ -1,6 +1,6 @@
 # PERL Rebuild
 
-This repo contains the mock-first PERL rebuild described in `AGENTS.md`.
+This repo contains the mock-first PERL rebuild described in `CLAUDE.md`.
 
 ## Apps
 

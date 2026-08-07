@@ -1,6 +1,6 @@
 # Scalable Frontend TODO
 
-This backlog records the next design and architecture steps required as PERL grows beyond the current mock-sized school data. It complements `planning/PLAN.md`; it does not change the phase order in `AGENTS.md`.
+This backlog records the next design and architecture steps required as PERL grows beyond the current mock-sized school data. It complements `planning/PLAN.md`; it does not change the phase order in `CLAUDE.md`.
 
 ## Current UI contracts
 

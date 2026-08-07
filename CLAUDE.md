@@ -1,4 +1,4 @@
-# PERL — Multi-Tenant SaaS Attendance Platform — AGENTS.md
+# PERL — Multi-Tenant SaaS Attendance Platform — CLAUDE.md
 
 **Version:** 3.0 (Mock-First, Feature-by-Feature Rebuild)
 **Supersedes:** v2.0 (SaaS conversion), v1.0 (single-tenant PRD)

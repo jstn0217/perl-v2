@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document consolidates the prior planning documents into one source of truth for the rebuild. It summarizes the legacy implementation under `existing/`, maps those findings to the mock-first rebuild in [AGENTS.md](/Users/jmendoza/Desktop/Documents/Work_Code/sandbox/perl-v2/AGENTS.md), and records the current implementation and remaining launch gates.
+This document consolidates the prior planning documents into one source of truth for the rebuild. It summarizes the legacy implementation under `existing/`, maps those findings to the mock-first rebuild in [CLAUDE.md](/Users/jmendoza/Desktop/Documents/Work_Code/sandbox/perl-v2/CLAUDE.md), and records the current implementation and remaining launch gates.
 
-It is intentionally evidence-based. `AGENTS.md` remains authoritative for phase scope and order; this file records implementation status and supporting decisions.
+It is intentionally evidence-based. `CLAUDE.md` remains authoritative for phase scope and order; this file records implementation status and supporting decisions.
 
 ## Current Repo State
 
@@ -78,7 +78,7 @@ Despite the technical debt, the legacy app is useful as domain evidence. It show
 - `Role`
   A roles table exists, but role usage in the app is still primarily numeric constants in code.
 
-This aligns with the rebuild direction in `AGENTS.md`: schools, users, devices, and attendance logs are the right core entities to preserve.
+This aligns with the rebuild direction in `CLAUDE.md`: schools, users, devices, and attendance logs are the right core entities to preserve.
 
 ## Observed Legacy Architecture
 
@@ -122,7 +122,7 @@ These are worth preserving as product behavior, not as code to copy directly:
 
 ## Existing Problems That Justify The Rebuild
 
-The rebuild in `AGENTS.md` is warranted. The old code conflicts with the new standards in multiple concrete ways.
+The rebuild in `CLAUDE.md` is warranted. The old code conflicts with the new standards in multiple concrete ways.
 
 ### Security and standards gaps
 
@@ -132,7 +132,7 @@ The rebuild in `AGENTS.md` is warranted. The old code conflicts with the new sta
 - Device auth passes the device key in the query string in `existing/perl-api/src/middleware/deviceAuth.js` and the firmware.
 - CORS is currently unrestricted.
 
-These directly contradict Section 10 of `AGENTS.md`.
+These directly contradict Section 10 of `CLAUDE.md`.
 
 ## Current Security Review
 
@@ -253,7 +253,7 @@ The goal should not be to modernize the legacy app in place. It should be to ext
 - Standalone websocket service
 - Arduino firmware work beyond documenting the future device contract
 - Generic boilerplate leftovers
-- Any billing, platform-admin, Redis, or enterprise-only work already deferred by `AGENTS.md`
+- Any billing, platform-admin, Redis, or enterprise-only work already deferred by `CLAUDE.md`
 
 ## Mapping To The New Rebuild Phases
 
@@ -402,11 +402,11 @@ Both should share validation and mapping utilities where practical, but they are
 
 ### Phase 6
 
-Add real database persistence only after the mock behavior is stable. For local development, this is where Docker becomes a first-class requirement. The rebuild should target MySQL to stay aligned with `AGENTS.md`, and the legacy data import path should be designed before the first production-like seed is loaded.
+Add real database persistence only after the mock behavior is stable. For local development, this is where Docker becomes a first-class requirement. The rebuild should target MySQL to stay aligned with `CLAUDE.md`, and the legacy data import path should be designed before the first production-like seed is loaded.
 
 ## Proposed Local Docker Strategy
 
-To stay aligned with `AGENTS.md`, Docker should be introduced in two stages:
+To stay aligned with `CLAUDE.md`, Docker should be introduced in two stages:
 
 1. Phase 0 to Phase 5
    The app should run locally without a database.
@@ -488,7 +488,7 @@ When the rebuild reaches real persistence:
 
 ### Planning implication
 
-`AGENTS.md` is the source of truth and already names MySQL in Phase 6. Planning artifacts should stay aligned with that choice until an explicit roadmap change is made there first.
+`CLAUDE.md` is the source of truth and already names MySQL in Phase 6. Planning artifacts should stay aligned with that choice until an explicit roadmap change is made there first.
 
 ## Recommended Deliverables Before Development Starts
 
@@ -536,7 +536,7 @@ Stabilize the current implementation instead of starting another feature phase:
 1. verify the UI refinement and existing feature paths without adding speculative frontend tests;
 2. run the mock-mode quality gates, then the MySQL parity suite when the database is available;
 3. keep Phase 8 marked in progress until the school-specific approvals, named owners, and operational exercises are complete;
-4. continue Phase 9 platform administration only within the product-owner-approved school provisioning, role-scoped access, and audited support workflow; billing and Redis realtime remain deferred until their separate triggers in `AGENTS.md`.
+4. continue Phase 9 platform administration only within the product-owner-approved school provisioning, role-scoped access, and audited support workflow; billing and Redis realtime remain deferred until their separate triggers in `CLAUDE.md`.
 
 ## Historical Phase 0 Execution Plan
 
@@ -548,7 +548,7 @@ It is intentionally narrow: this is not the full product roadmap. It is the star
 
 ## Phase 0 Goal
 
-Per `AGENTS.md`, Phase 0 is:
+Per `CLAUDE.md`, Phase 0 is:
 
 > an empty-but-running app with the ports-and-adapters skeleton in place, no features yet
 
@@ -560,7 +560,7 @@ That means Phase 0 is complete only when:
 - mock repositories are wired by default
 - the code structure already supports the later mock-to-db swap
 
-## Constraints From AGENTS.md
+## Constraints From CLAUDE.md
 
 These constraints govern the implementation:
 
