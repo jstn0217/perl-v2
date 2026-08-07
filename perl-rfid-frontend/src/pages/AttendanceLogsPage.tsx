@@ -316,10 +316,10 @@ export const AttendanceLogsPage = () => {
                   ) : (
                     records.map((record) => (
                       <tr key={record.log.id}>
-                        <td>
+                        <td data-label="Person">
                           <StudentName record={record} />
                         </td>
-                        <td>
+                        <td data-label="Result">
                           <div className="result-cell">
                             <span className={`status-pill status-pill--${record.log.verdict.toLowerCase()}`}>
                               {verdictCopy[record.log.verdict]}
@@ -329,14 +329,14 @@ export const AttendanceLogsPage = () => {
                             </span>
                           </div>
                         </td>
-                        <td>
+                        <td data-label="Device">
                           <div>
                             <strong>{record.device?.name ?? 'Unknown device'}</strong>
                             <p>{record.device?.location ?? 'No location'}</p>
                           </div>
                         </td>
-                        <td className="message-cell">{record.log.message}</td>
-                        <td>{formatTimestamp(record.log.scannedAt)}</td>
+                        <td className="message-cell" data-label="Message">{record.log.message}</td>
+                        <td data-label="Scanned">{formatTimestamp(record.log.scannedAt)}</td>
                       </tr>
                     ))
                   )}

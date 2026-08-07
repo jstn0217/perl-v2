@@ -3090,6 +3090,87 @@ body {
   }
 }
 
+.offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  margin-block-end: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--school-accent) 20%, white);
+  color: #6b4400;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.offline-banner__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #b45309;
+}
+
+@media (max-width: 640px) {
+  .table-wrap {
+    overflow-x: visible;
+  }
+
+  .attendance-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .attendance-table,
+  .attendance-table tbody,
+  .attendance-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .attendance-table tr {
+    padding-block: 14px;
+    border-block-end: 1px solid color-mix(in srgb, var(--school-primary) 10%, white);
+  }
+
+  .attendance-table tr:first-child {
+    border-block-start: 1px solid color-mix(in srgb, var(--school-primary) 10%, white);
+  }
+
+  .attendance-table td {
+    display: grid;
+    grid-template-columns: minmax(84px, 32%) minmax(0, 1fr);
+    gap: 2px 12px;
+    padding: 7px 0;
+    border: 0;
+  }
+
+  .attendance-table td[data-label]::before {
+    align-self: start;
+    padding-block-start: 2px;
+    color: var(--ink-soft);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    content: attr(data-label);
+  }
+
+  .attendance-table td:not([data-label]) {
+    display: block;
+    padding-block: 0;
+  }
+
+  .message-cell {
+    min-width: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -140,15 +140,15 @@ export const NotificationLogsPage = () => {
               <tr><td colSpan={6}><div className="table-skeleton" /></td></tr>
             ) : payload?.records.length ? payload.records.map((record) => (
               <tr key={record.id}>
-                <td>{new Date(record.createdAt).toLocaleString()}</td>
-                <td><span className="status-pill">{record.status}</span></td>
-                <td>{record.recipient ?? 'Not available'}</td>
-                <td>{record.direction === 'IN' ? 'Logged in' : 'Logged out'}</td>
-                <td>
+                <td data-label="When">{new Date(record.createdAt).toLocaleString()}</td>
+                <td data-label="Status"><span className="status-pill">{record.status}</span></td>
+                <td data-label="Recipient">{record.recipient ?? 'Not available'}</td>
+                <td data-label="Movement">{record.direction === 'IN' ? 'Logged in' : 'Logged out'}</td>
+                <td data-label="Provider result">
                   <strong>{record.provider}</strong>
                   <p>{record.providerStatus ?? record.providerMessageId ?? '—'}</p>
                 </td>
-                <td className="message-cell">
+                <td className="message-cell" data-label="Message / issue">
                   {record.errorMessage ? <strong>{record.errorMessage}</strong> : record.message}
                 </td>
               </tr>

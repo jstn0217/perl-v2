@@ -12,7 +12,11 @@ All notable changes to the PERL platform's plan and codebase are documented here
 
 ## [Unreleased]
 
+### Fixed
+- Backend quality pass (`perl-api`): fixed a 401 response in `requireRole` (`perl-api/src/middleware/authMiddleware.ts`) that returned `{ error }` instead of the `{ message }` shape every other endpoint uses; deduplicated the four near-identical DENIED-scan result blocks in `AttendanceService.scanCard` (`perl-api/src/services/AttendanceService.ts`) into one `denyScan` helper, no behavior change; resolved the 2 HIGH `npm audit` advisories (`brace-expansion`, `js-yaml`, both transitive dev-dependency chains) via `npm audit fix` in `perl-api/`.
+
 ### Added
+- Frontend PWA: added a platform-level (non-tenant) web app manifest, generated icon set, and a hand-rolled service worker (`perl-rfid-frontend/public/manifest.webmanifest`, `public/sw.js`, `public/icons/`) giving the app installability and an offline app-shell fallback; the service worker never caches `/api/*` or the SSE attendance stream, since offline data entry is out of scope. Added a global `OfflineBanner` reflecting `navigator.onLine` and mobile-responsive stacked-table CSS for the four `attendance-table` list screens (attendance logs, action logs, SMS logs, people) so they no longer rely solely on horizontal scroll under 640px.
 - Attendance notifications: added a Semaphore SMS adapter behind `ISmsGateway`, school-scoped notification transaction repositories for mock/MySQL, and `NotificationService` delivery tracking for queued, sent, failed, and skipped guardian messages after admitted student IN/OUT scans.
 - Platform SMS administration: added school-level SMS subscription and sender settings to `SchoolProfile`, a `SYSTEM_ADMIN`-only audited settings endpoint, a protected school subscription list with read-only `SUPPORT` visibility, and a filterable/exportable SMS delivery-history screen.
 - Guardian contacts: added guardian mobile-number support to school-user create/edit/import/export, and updated the downloadable People CSV template so linked guardians can receive student attendance messages.
@@ -161,6 +165,3 @@ All notable changes to the PERL platform's plan and codebase are documented here
 - Development standards (linting, testing, git hygiene, build process).
 - Non-destructive data migration policy, including a silent MD5→bcrypt password migration path.
 - Deployment checklist and full local Docker development environment spec.
-### Fixed
-- Backend quality pass (`perl-api`): fixed a 401 response in `requireRole` (`perl-api/src/middleware/authMiddleware.ts`) that returned `{ error }` instead of the `{ message }` shape every other endpoint uses; deduplicated the four near-identical DENIED-scan result blocks in `AttendanceService.scanCard` (`perl-api/src/services/AttendanceService.ts`) into one `denyScan` helper, no behavior change; resolved the 2 HIGH `npm audit` advisories (`brace-expansion`, `js-yaml`, both transitive dev-dependency chains) via `npm audit fix` in `perl-api/`.
-

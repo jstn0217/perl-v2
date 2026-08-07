@@ -624,7 +624,7 @@ export const UserManagementPage = () => {
                 ) : (
                   userPagination.pageItems.map((managedUser) => (
                     <tr key={managedUser.id}>
-                      {canEdit ? <td>
+                      {canEdit ? <td data-label="User">
                         <div className="user-identity">
                           {managedUser.imageUrl ? (
                             <img src={managedUser.imageUrl} alt="" className="user-avatar" />
@@ -639,10 +639,10 @@ export const UserManagementPage = () => {
                           </div>
                         </div>
                       </td> : null}
-                      <td>
+                      <td data-label="Status">
                         <UserStatusPill user={managedUser} />
                       </td>
-                      <td>
+                      <td data-label="Attendance data">
                         <div>
                           {managedUser.role === 'GUARDIAN' ? (
                             <>
@@ -667,7 +667,7 @@ export const UserManagementPage = () => {
                           )}
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Actions">
                         <div className="table-actions">
                           <button
                             className="secondary-button"

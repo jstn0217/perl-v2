@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#164e63" />
+    <title>PERL — Offline</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: #ecf4f6;
+        color: #112033;
+        font-family: "Segoe UI", "Avenir Next", sans-serif;
+      }
+
+      main {
+        width: min(420px, 100%);
+        display: grid;
+        gap: 14px;
+        text-align: center;
+      }
+
+      .mark {
+        justify-self: center;
+        width: 56px;
+        height: 56px;
+        border-radius: 16px;
+        background: #164e63;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        letter-spacing: -0.02em;
+      }
+
+      p {
+        margin: 0;
+        line-height: 1.55;
+        color: #33485f;
+      }
+
+      button {
+        justify-self: center;
+        margin-top: 8px;
+        min-height: 46px;
+        padding: 0 20px;
+        border: 0;
+        border-radius: 12px;
+        background: #164e63;
+        color: white;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #0b1b26;
+          color: #eaf2f6;
+        }
+
+        p {
+          color: #a9c0cc;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true"></div>
+      <h1>You're offline</h1>
+      <p>
+        PERL needs a connection to load live attendance data. Reconnect to Wi-Fi or mobile data
+        and try again.
+      </p>
+      <button type="button" onclick="window.location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { OfflineBanner } from '../components/OfflineBanner';
 import { SchoolMark } from '../components/SchoolMark';
 import { AppNavigationDrawer } from './AppNavigationDrawer';
 import { useAuth } from '../providers/auth-context';
@@ -37,6 +38,7 @@ export const AppLayout = () => {
 
   return (
     <main className="dashboard-shell">
+      <OfflineBanner />
       <section className="dashboard-frame">
         <header className="dashboard-header">
           <div className="brand-lockup">

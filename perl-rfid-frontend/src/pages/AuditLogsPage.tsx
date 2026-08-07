@@ -325,17 +325,17 @@ export const AuditLogsPage = () => {
                 ) : auditPage?.records.length ? (
                   auditPage.records.map((record) => (
                     <tr key={record.id}>
-                      <td><time dateTime={record.occurredAt}>{formatTimestamp(record.occurredAt)}</time></td>
-                      <td>{schoolNames.get(record.schoolId) ?? record.schoolId}</td>
-                      <td><strong>{formatAction(record.action)}</strong></td>
-                      <td>
+                      <td data-label="When"><time dateTime={record.occurredAt}>{formatTimestamp(record.occurredAt)}</time></td>
+                      <td data-label="School">{schoolNames.get(record.schoolId) ?? record.schoolId}</td>
+                      <td data-label="Action"><strong>{formatAction(record.action)}</strong></td>
+                      <td data-label="Actor">
                         <span className={`status-pill ${record.supportInitiated ? 'status-pill--direction-out' : 'status-pill--muted'}`}>
                           {record.supportInitiated ? 'System support' : record.actorRole}
                         </span>
                         <p>{record.actorUserId}</p>
                       </td>
-                      <td>{record.targetId ?? record.targetType}</td>
-                      <td className="message-cell">{record.changeSummary}</td>
+                      <td data-label="Target">{record.targetId ?? record.targetType}</td>
+                      <td className="message-cell" data-label="Change">{record.changeSummary}</td>
                     </tr>
                   ))
                 ) : (
