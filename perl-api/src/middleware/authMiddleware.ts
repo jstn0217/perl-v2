@@ -55,7 +55,7 @@ export const requireRole =
   (authService: AuthService, allowedRoles: UserRole[]) =>
   (req: Request, res: Response, next: NextFunction) => {
     if (!req.currentUser) {
-      return res.status(401).json({ error: 'Authentication required.' });
+      return res.status(401).json({ message: 'Authentication required.' });
     }
 
     const schoolId = typeof req.params.schoolId === 'string' ? req.params.schoolId : undefined;

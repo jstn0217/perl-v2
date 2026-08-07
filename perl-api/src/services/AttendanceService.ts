@@ -49,82 +49,37 @@ export class AttendanceService {
     const student = await this.userRepository.findByCardUid(cardUid);
 
     if (!student || student.role === 'GUARDIAN') {
-      const deniedLog = await this.createDeniedLog({
+      return this.denyScan({
         schoolId,
-        deviceId: device.id,
+        device,
         denialReason: 'USER_NOT_FOUND',
         message: 'Card not recognized.',
         scannedAt
       });
-
-      const result: AttendanceScanResult = {
-        schoolId,
-        deviceId: device.id,
-        deviceName: device.name,
-        deviceLocation: device.location,
-        verdict: 'DENIED',
-        denialReason: 'USER_NOT_FOUND',
-        student: null,
-        log: deniedLog
-      };
-
-      attendanceEventBus.publish(result);
-
-      return result;
     }
 
     if (student.schoolId !== schoolId) {
-      const deniedLog = await this.createDeniedLog({
+      return this.denyScan({
         schoolId,
-        deviceId: device.id,
+        device,
         denialReason: 'CROSS_SCHOOL_USER',
         message: 'Card not recognized for this school.',
         scannedAt
       });
-
-      const result: AttendanceScanResult = {
-        schoolId,
-        deviceId: device.id,
-        deviceName: device.name,
-        deviceLocation: device.location,
-        verdict: 'DENIED',
-        denialReason: 'CROSS_SCHOOL_USER',
-        student: null,
-        log: deniedLog
-      };
-
-      attendanceEventBus.publish(result);
-
-      return result;
     }
 
     const todaysLogs = await this.attendanceRepository.findByUserAndDate(student.id, toDateKey(scannedAt));
     const admittedLogs = todaysLogs.filter((log) => log.verdict === 'ADMITTED');
 
     if (admittedLogs.length >= MAX_DAILY_SCANS) {
-      const deniedLog = await this.createDeniedLog({
+      return this.denyScan({
         schoolId,
-        deviceId: device.id,
+        device,
         denialReason: 'DAILY_LIMIT_REACHED',
         message: `${student.firstName} ${student.lastName} has already completed attendance for today.`,
         scannedAt,
-        userId: student.id
+        student
       });
-
-      const result: AttendanceScanResult = {
-        schoolId,
-        deviceId: device.id,
-        deviceName: device.name,
-        deviceLocation: device.location,
-        verdict: 'DENIED',
-        denialReason: 'DAILY_LIMIT_REACHED',
-        student: this.toDisplayStudent(student),
-        log: deniedLog
-      };
-
-      attendanceEventBus.publish(result);
-
-      return result;
     }
 
     const mostRecentAdmittedLog = admittedLogs[0];
@@ -133,29 +88,14 @@ export class AttendanceService {
       const elapsedMinutes = toMinuteDifference(mostRecentAdmittedLog.scannedAt, scannedAt);
 
       if (elapsedMinutes < COOLDOWN_MINUTES) {
-        const deniedLog = await this.createDeniedLog({
+        return this.denyScan({
           schoolId,
-          deviceId: device.id,
+          device,
           denialReason: 'COOLDOWN_ACTIVE',
           message: `${student.firstName} ${student.lastName} must wait ${COOLDOWN_MINUTES} minutes before scanning again.`,
           scannedAt,
-          userId: student.id
+          student
         });
-
-        const result: AttendanceScanResult = {
-          schoolId,
-          deviceId: device.id,
-          deviceName: device.name,
-          deviceLocation: device.location,
-          verdict: 'DENIED',
-          denialReason: 'COOLDOWN_ACTIVE',
-          student: this.toDisplayStudent(student),
-          log: deniedLog
-        };
-
-        attendanceEventBus.publish(result);
-
-        return result;
       }
     }
 
@@ -308,6 +248,46 @@ export class AttendanceService {
         .filter(Boolean)
         .some((value) => value?.toLocaleLowerCase().includes(search))
     );
+  }
+
+  private async denyScan({
+    schoolId,
+    device,
+    denialReason,
+    message,
+    scannedAt,
+    student
+  }: {
+    schoolId: string;
+    device: { id: string; name: string; location: string };
+    denialReason: NonNullable<AttendanceScanResult['denialReason']>;
+    message: string;
+    scannedAt: string;
+    student?: UserRecord;
+  }): Promise<AttendanceScanResult> {
+    const deniedLog = await this.createDeniedLog({
+      schoolId,
+      deviceId: device.id,
+      denialReason,
+      message,
+      scannedAt,
+      userId: student?.id
+    });
+
+    const result: AttendanceScanResult = {
+      schoolId,
+      deviceId: device.id,
+      deviceName: device.name,
+      deviceLocation: device.location,
+      verdict: 'DENIED',
+      denialReason,
+      student: student ? this.toDisplayStudent(student) : null,
+      log: deniedLog
+    };
+
+    attendanceEventBus.publish(result);
+
+    return result;
   }
 
   private async createDeniedLog({

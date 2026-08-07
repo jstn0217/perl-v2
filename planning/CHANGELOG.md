@@ -161,3 +161,6 @@ All notable changes to the PERL platform's plan and codebase are documented here
 - Development standards (linting, testing, git hygiene, build process).
 - Non-destructive data migration policy, including a silent MD5→bcrypt password migration path.
 - Deployment checklist and full local Docker development environment spec.
+### Fixed
+- Backend quality pass (`perl-api`): fixed a 401 response in `requireRole` (`perl-api/src/middleware/authMiddleware.ts`) that returned `{ error }` instead of the `{ message }` shape every other endpoint uses; deduplicated the four near-identical DENIED-scan result blocks in `AttendanceService.scanCard` (`perl-api/src/services/AttendanceService.ts`) into one `denyScan` helper, no behavior change; resolved the 2 HIGH `npm audit` advisories (`brace-expansion`, `js-yaml`, both transitive dev-dependency chains) via `npm audit fix` in `perl-api/`.
+
