@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useState } from 'react';
 
 interface SchoolMarkProps {
   name: string;
@@ -13,10 +14,19 @@ export const SchoolMark = ({
   compact = false,
   style
 }: SchoolMarkProps) => {
+  const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
   const className = `school-mark${compact ? ' school-mark--compact' : ''}`;
 
-  if (logoUrl) {
-    return <img className={className} src={logoUrl} alt={`${name} logo`} style={style} />;
+  if (logoUrl && logoUrl !== failedLogoUrl) {
+    return (
+      <img
+        className={className}
+        src={logoUrl}
+        alt={`${name} logo`}
+        style={style}
+        onError={() => setFailedLogoUrl(logoUrl)}
+      />
+    );
   }
 
   return (

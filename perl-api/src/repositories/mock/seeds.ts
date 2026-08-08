@@ -33,7 +33,12 @@ export const createMockSchools = (): SchoolProfile[] => [
     },
     contactEmail: 'frontdesk@stmarys.edu',
     smsEnabled: true,
-    smsSenderName: 'STMARYS'
+    smsSenderName: 'STMARYS',
+    address: '145 P. Burgos Street, Barangay Poblacion, Makati City, Metro Manila',
+    phone: '(02) 8888-0145',
+    timezone: 'Asia/Manila',
+    academicYearLabel: 'SY 2025-2026',
+    depedSchoolId: 'DEPED-NCR-105234'
   },
   {
     id: 'school-riverside',
@@ -47,7 +52,12 @@ export const createMockSchools = (): SchoolProfile[] => [
     },
     contactEmail: 'admin@riversidetech.edu',
     smsEnabled: true,
-    smsSenderName: 'RIVERSIDE'
+    smsSenderName: 'RIVERSIDE',
+    address: '88 Marcos Highway, Barangay San Roque, Antipolo City, Rizal',
+    phone: '(02) 8722-9981',
+    timezone: 'Asia/Manila',
+    academicYearLabel: 'AY 2025-2026, Term 2',
+    depedSchoolId: 'DEPED-CALABARZON-402117'
   },
   {
     id: 'school-golden',
@@ -61,7 +71,12 @@ export const createMockSchools = (): SchoolProfile[] => [
     },
     contactEmail: 'office@goldenharvest.edu',
     smsEnabled: false,
-    smsSenderName: 'GOLDEN'
+    smsSenderName: 'GOLDEN',
+    address: '22 Osmena Boulevard, Barangay Lahug, Cebu City, Cebu',
+    phone: '(032) 254-3367',
+    timezone: 'Asia/Manila',
+    academicYearLabel: 'SY 2025-2026 (Trimester)',
+    depedSchoolId: 'DEPED-CENTRALVISAYAS-701845'
   }
 ];
 

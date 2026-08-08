@@ -1,4 +1,10 @@
-import type { UserRecord } from '../../types/User.js';
+import type { PagedResult, PageQuery } from '../../types/Pagination.js';
+import type { SchoolUserRole, UserRecord } from '../../types/User.js';
+
+export interface UserListQuery extends PageQuery {
+  role?: SchoolUserRole;
+  status?: 'active' | 'inactive';
+}
 
 export interface IUserRepository {
   findByEmail(email: string, options?: { includeInactive?: boolean }): Promise<UserRecord | null>;
@@ -11,6 +17,7 @@ export interface IUserRepository {
   findByCardUid(cardUid: string, options?: { includeInactive?: boolean }): Promise<UserRecord | null>;
   findStudentByCardUid(cardUid: string): Promise<UserRecord | null>;
   listBySchool(schoolId: string): Promise<UserRecord[]>;
+  listBySchoolPaged(schoolId: string, query: UserListQuery): Promise<PagedResult<UserRecord>>;
   create(user: UserRecord): Promise<UserRecord>;
   update(userId: string, schoolId: string, changes: Partial<UserRecord>): Promise<UserRecord | null>;
   deactivate(userId: string, schoolId: string): Promise<UserRecord | null>;

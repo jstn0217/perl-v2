@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import type { AuditAction, AuditRecord } from '../types/Audit.js';
 import type { RepositorySet } from '../repositories/index.js';
 import type { IImageStorage } from '../storage/IImageStorage.js';
+import type { SchoolUserRole } from '../types/User.js';
 import { AdminService } from '../services/AdminService.js';
 import { AuditService } from '../services/AuditService.js';
 import { DeviceService } from '../services/DeviceService.js';
@@ -17,6 +18,20 @@ const readPositiveInteger = (value: unknown, fallback: number, maximum: number) 
   const parsed = Number.parseInt(typeof value === 'string' ? value : '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, maximum) : fallback;
 };
+
+const userRoles = ['ADMIN', 'STAFF', 'STUDENT', 'GUARDIAN'];
+
+const readUserRole = (value: unknown) =>
+  typeof value === 'string' && userRoles.includes(value) ? (value as SchoolUserRole) : undefined;
+
+const readStatus = (value: unknown) => (value === 'active' || value === 'inactive' ? value : undefined);
+
+const readSortDir = (value: unknown) => (value === 'desc' ? 'desc' : 'asc');
+
+const readSearch = (value: unknown) =>
+  typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+
+const readSort = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 
 export const createAdminController = (repositories: RepositorySet, imageStorage: IImageStorage) => {
   const adminService = new AdminService(repositories.tenantRepository, repositories.userRepository);
@@ -141,9 +156,19 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
           return res.status(400).json({ message: 'School scope is required.' });
         }
 
-        const users = await adminService.listUsers(schoolId);
+        const page = readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);
+        const pageSize = readPositiveInteger(req.query.pageSize, 20, 100);
+        const { items, total } = await adminService.listUsersPaged(schoolId, {
+          page,
+          pageSize,
+          search: readSearch(req.query.search),
+          sort: readSort(req.query.sort),
+          dir: readSortDir(req.query.dir),
+          role: readUserRole(req.query.role),
+          status: readStatus(req.query.status)
+        });
 
-        return res.json({ users });
+        return res.json({ users: items, total, page, pageSize });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to load users.';
 
@@ -269,9 +294,18 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
           return res.status(400).json({ message: 'School scope is required.' });
         }
 
-        const devices = await deviceService.listDevices(schoolId);
+        const page = readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);
+        const pageSize = readPositiveInteger(req.query.pageSize, 20, 100);
+        const { items, total } = await deviceService.listDevicesPaged(schoolId, {
+          page,
+          pageSize,
+          search: readSearch(req.query.search),
+          sort: readSort(req.query.sort),
+          dir: readSortDir(req.query.dir),
+          status: readStatus(req.query.status)
+        });
 
-        return res.json({ devices });
+        return res.json({ devices: items, total, page, pageSize });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to load devices.';
 

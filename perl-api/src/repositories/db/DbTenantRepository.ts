@@ -1,4 +1,3 @@
-import type { RowDataPacket } from 'mysql2';
 import type { ITenantRepository } from '../interfaces/ITenantRepository.js';
 import type { SchoolProfile } from '../../types/SchoolProfile.js';
 import { mapSchoolRow, type SchoolRow } from './mappers.js';
@@ -9,9 +8,10 @@ export class DbTenantRepository implements ITenantRepository {
     await getDbPool().query(
       `INSERT INTO schools (
         id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-        contact_email, sms_enabled, sms_sender_name, sort_order
+        contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
+        academic_year_label, deped_school_id, sort_order
       )
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(MAX(sort_order), 0) + 1
+      SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE(MAX(sort_order), 0) + 1
       FROM schools`,
       [
         school.id,
@@ -22,8 +22,13 @@ export class DbTenantRepository implements ITenantRepository {
         school.theme.secondaryColor,
         school.theme.accentColor,
         school.contactEmail,
-        school.smsEnabled ? 1 : 0,
-        school.smsSenderName
+        school.smsEnabled,
+        school.smsSenderName,
+        school.address,
+        school.phone,
+        school.timezone,
+        school.academicYearLabel,
+        school.depedSchoolId
       ]
     );
 
@@ -31,11 +36,12 @@ export class DbTenantRepository implements ITenantRepository {
   }
 
   async findSchoolById(schoolId: string): Promise<SchoolProfile | null> {
-    const [rows] = await getDbPool().query<(SchoolRow & RowDataPacket)[]>(
+    const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-              contact_email, sms_enabled, sms_sender_name
+              contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
+              academic_year_label, deped_school_id
        FROM schools
-       WHERE id = ?
+       WHERE id = $1
        LIMIT 1`,
       [schoolId]
     );
@@ -44,11 +50,12 @@ export class DbTenantRepository implements ITenantRepository {
   }
 
   async findSchoolBySlug(slug: string): Promise<SchoolProfile | null> {
-    const [rows] = await getDbPool().query<(SchoolRow & RowDataPacket)[]>(
+    const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-              contact_email, sms_enabled, sms_sender_name
+              contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
+              academic_year_label, deped_school_id
        FROM schools
-       WHERE slug = ?
+       WHERE slug = $1
        LIMIT 1`,
       [slug]
     );
@@ -57,9 +64,10 @@ export class DbTenantRepository implements ITenantRepository {
   }
 
   async getDefaultSchool(): Promise<SchoolProfile> {
-    const [rows] = await getDbPool().query<(SchoolRow & RowDataPacket)[]>(
+    const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-              contact_email, sms_enabled, sms_sender_name
+              contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
+              academic_year_label, deped_school_id
        FROM schools
        ORDER BY sort_order ASC, created_at ASC
        LIMIT 1`
@@ -73,9 +81,10 @@ export class DbTenantRepository implements ITenantRepository {
   }
 
   async listSchools(): Promise<SchoolProfile[]> {
-    const [rows] = await getDbPool().query<(SchoolRow & RowDataPacket)[]>(
+    const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-              contact_email, sms_enabled, sms_sender_name
+              contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
+              academic_year_label, deped_school_id
        FROM schools
        ORDER BY sort_order ASC, created_at ASC`
     );
@@ -103,14 +112,22 @@ export class DbTenantRepository implements ITenantRepository {
       accentColor: changes.theme?.accentColor ?? school.theme.accentColor,
       smsEnabled: changes.smsEnabled ?? school.smsEnabled,
       smsSenderName:
-        changes.smsSenderName !== undefined ? changes.smsSenderName : school.smsSenderName
+        changes.smsSenderName !== undefined ? changes.smsSenderName : school.smsSenderName,
+      address: changes.address !== undefined ? changes.address : school.address,
+      phone: changes.phone !== undefined ? changes.phone : school.phone,
+      timezone: changes.timezone ?? school.timezone,
+      academicYearLabel:
+        changes.academicYearLabel !== undefined ? changes.academicYearLabel : school.academicYearLabel,
+      depedSchoolId:
+        changes.depedSchoolId !== undefined ? changes.depedSchoolId : school.depedSchoolId
     };
 
     await getDbPool().query(
       `UPDATE schools
-       SET name = ?, logo_url = ?, contact_email = ?, primary_color = ?, secondary_color = ?,
-           accent_color = ?, sms_enabled = ?, sms_sender_name = ?
-       WHERE id = ?`,
+       SET name = $1, logo_url = $2, contact_email = $3, primary_color = $4, secondary_color = $5,
+           accent_color = $6, sms_enabled = $7, sms_sender_name = $8, address = $9, phone = $10,
+           timezone = $11, academic_year_label = $12, deped_school_id = $13
+       WHERE id = $14`,
       [
         next.name,
         next.logoUrl,
@@ -118,8 +135,13 @@ export class DbTenantRepository implements ITenantRepository {
         next.primaryColor,
         next.secondaryColor,
         next.accentColor,
-        next.smsEnabled ? 1 : 0,
+        next.smsEnabled,
         next.smsSenderName,
+        next.address,
+        next.phone,
+        next.timezone,
+        next.academicYearLabel,
+        next.depedSchoolId,
         schoolId
       ]
     );

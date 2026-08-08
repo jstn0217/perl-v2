@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { InlineAlert } from '../components/InlineAlert';
 import { Modal } from '../components/Modal';
 import { ListToolbar } from '../components/ListToolbar';
 import { Pagination } from '../components/Pagination';
-import { usePagination } from '../hooks/usePagination';
+import { useListQueryState } from '../hooks/useListQueryState';
 import {
   createAdminUser,
   deactivateAdminUser,
@@ -15,6 +17,8 @@ import { useAuth } from '../providers/auth-context';
 import { useTenantContext } from '../providers/TenantContext';
 import { downloadCsvColumns, parseCsv, type CsvColumn } from '../lib/csv';
 import { canManageSchool } from '../lib/permissions';
+import { UserForm } from '../components/forms/UserForm';
+import { createEmptyUserForm, toUserFormState, type UserFormState } from '../components/forms/userFormState';
 import type {
   ManagedUser,
   ManagedUserCreatePayload,
@@ -26,6 +30,7 @@ import type {
 
 const roleOptions: SchoolUserRole[] = ['ADMIN', 'STAFF', 'STUDENT', 'GUARDIAN'];
 const USER_PAGE_SIZE = 8;
+const EXPORT_ROW_CAP = 100;
 const importHeaders = [
   'email',
   'password',
@@ -39,7 +44,6 @@ const importHeaders = [
   'linkedStudentEmails'
 ] as const;
 const emptyUserFilters = {
-  search: '',
   role: '',
   status: ''
 };
@@ -56,65 +60,6 @@ const defaultUserExportColumns = [
   'linkedStudents'
 ];
 
-type UserFormState = {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  role: SchoolUserRole;
-  cardUid: string;
-  gradeLevel: string;
-  section: string;
-  imageUrl: string;
-  phoneNumber: string;
-  linkedStudentIds: string[];
-};
-
-const createEmptyUserForm = (): UserFormState => ({
-  email: '',
-  password: '',
-  firstName: '',
-  lastName: '',
-  role: 'STAFF',
-  cardUid: '',
-  gradeLevel: '',
-  section: '',
-  imageUrl: '',
-  phoneNumber: '',
-  linkedStudentIds: []
-});
-
-const toUserFormState = (user: ManagedUser): UserFormState => ({
-  email: user.email,
-  password: '',
-  firstName: user.firstName,
-  lastName: user.lastName,
-  role: user.role,
-  cardUid: user.cardUid ?? '',
-  gradeLevel: user.gradeLevel ?? '',
-  section: user.section ?? '',
-  imageUrl: user.imageUrl ?? '',
-  phoneNumber: user.phoneNumber ?? '',
-  linkedStudentIds: user.linkedStudentIds
-});
-
-const sortUsers = (users: ManagedUser[]) =>
-  [...users].sort((left, right) => {
-    if (left.isActive !== right.isActive) {
-      return left.isActive ? -1 : 1;
-    }
-
-    const nameCompare = `${left.lastName} ${left.firstName}`.localeCompare(
-      `${right.lastName} ${right.firstName}`
-    );
-
-    if (nameCompare !== 0) {
-      return nameCompare;
-    }
-
-    return left.email.localeCompare(right.email);
-  });
-
 const UserStatusPill = ({ user }: { user: ManagedUser }) => (
   <div className="result-cell">
     <span className={`status-pill ${user.isActive ? 'status-pill--admitted' : 'status-pill--denied'}`}>
@@ -128,8 +73,24 @@ export const UserManagementPage = () => {
   const { user: sessionUser } = useAuth();
   const { activeSchool } = useTenantContext();
   const canEdit = canManageSchool(sessionUser?.role);
-  const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'saving'>('loading');
+  const query = useListQueryState({
+    pageSize: USER_PAGE_SIZE,
+    defaultSort: 'name',
+    defaultFilters: emptyUserFilters
+  });
+
+  const [listState, setListState] = useState<{
+    requestKey: string;
+    users: ManagedUser[];
+    total: number;
+  } | null>(null);
+  const [listErrorState, setListErrorState] = useState<{ requestKey: string; message: string } | null>(
+    null
+  );
+  const [studentsDirectory, setStudentsDirectory] = useState<ManagedUser[]>([]);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create');
@@ -138,14 +99,31 @@ export const UserManagementPage = () => {
   const [formState, setFormState] = useState<UserFormState>(createEmptyUserForm);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [filters, setFilters] = useState(emptyUserFilters);
-  const [selectedExportColumns, setSelectedExportColumns] = useState(
-    defaultUserExportColumns
-  );
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const initialFormStateRef = useRef<UserFormState>(createEmptyUserForm());
+  const initialImageFileRef = useRef<File | null>(null);
+
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<ManagedUserImportResult | null>(null);
   const [importing, setImporting] = useState(false);
+
+  const [exporting, setExporting] = useState(false);
+  const [selectedExportColumns, setSelectedExportColumns] = useState(defaultUserExportColumns);
+
+  const [deactivateTarget, setDeactivateTarget] = useState<ManagedUser | null>(null);
+
+  const listRequestKey = [
+    activeSchool.id,
+    query.page,
+    query.pageSize,
+    query.debouncedSearch,
+    query.sort,
+    query.dir,
+    query.filters.role,
+    query.filters.status,
+    reloadToken
+  ].join('|');
 
   useEffect(() => {
     if (!sessionUser) {
@@ -154,57 +132,86 @@ export const UserManagementPage = () => {
 
     let cancelled = false;
 
-    void fetchAdminUsers(activeSchool.id)
+    void fetchAdminUsers(activeSchool.id, {
+      page: query.page,
+      pageSize: query.pageSize,
+      search: query.debouncedSearch || undefined,
+      sort: query.sort,
+      dir: query.dir,
+      role: (query.filters.role || undefined) as SchoolUserRole | undefined,
+      status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
+    })
       .then((payload) => {
-        if (cancelled) {
-          return;
-        }
-
-        setUsers(sortUsers(payload));
-        setStatus('ready');
+        if (cancelled) return;
+        setListState({ requestKey: listRequestKey, users: payload.users, total: payload.total });
+        setListErrorState(null);
       })
       .catch((loadError) => {
-        if (cancelled) {
-          return;
-        }
-
-        setError(loadError instanceof Error ? loadError.message : 'Unable to load school users.');
-        setStatus('ready');
+        if (cancelled) return;
+        setListErrorState({
+          requestKey: listRequestKey,
+          message: loadError instanceof Error ? loadError.message : 'Unable to load school users.'
+        });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeSchool.id, sessionUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listRequestKey, sessionUser]);
+
+  const users = useMemo(
+    () => (listState?.requestKey === listRequestKey ? listState.users : []),
+    [listRequestKey, listState]
+  );
+  // Keep the last known total visible while a refetch is in flight (not gated on
+  // listRequestKey) so the toolbar's aria-live result count doesn't announce a
+  // misleading "0 people" on every keystroke before the new page has loaded.
+  const total = listState?.total ?? 0;
+  const listStatus: 'loading' | 'ready' | 'error' =
+    listErrorState?.requestKey === listRequestKey
+      ? 'error'
+      : listState?.requestKey === listRequestKey
+        ? 'ready'
+        : 'loading';
+  const listError = listErrorState?.requestKey === listRequestKey ? listErrorState.message : null;
+
+  useEffect(() => {
+    if (!sessionUser) return;
+    let cancelled = false;
+
+    void fetchAdminUsers(activeSchool.id, {
+      page: 1,
+      pageSize: EXPORT_ROW_CAP,
+      sort: 'name',
+      dir: 'asc',
+      role: 'STUDENT'
+    })
+      .then((payload) => {
+        if (!cancelled) setStudentsDirectory(payload.users);
+      })
+      .catch(() => {
+        if (!cancelled) setStudentsDirectory([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSchool.id, reloadToken, sessionUser]);
 
   const selectedUser = useMemo(
     () => users.find((managedUser) => managedUser.id === selectedUserId) ?? null,
     [selectedUserId, users]
   );
 
-  const counts = useMemo(
-    () => ({
-      total: users.length,
-      active: users.filter((managedUser) => managedUser.isActive).length,
-      students: users.filter((managedUser) => managedUser.role === 'STUDENT').length,
-      guardians: users.filter((managedUser) => managedUser.role === 'GUARDIAN').length
-    }),
-    [users]
-  );
-  const students = useMemo(
-    () => users.filter((managedUser) => managedUser.role === 'STUDENT'),
-    [users]
-  );
-  const userNames = useMemo(
+  const studentNames = useMemo(
     () =>
       new Map(
-        users.map((managedUser) => [
-          managedUser.id,
-          `${managedUser.firstName} ${managedUser.lastName}`
-        ])
+        studentsDirectory.map((student) => [student.id, `${student.firstName} ${student.lastName}`])
       ),
-    [users]
+    [studentsDirectory]
   );
+
   const userExportColumns = useMemo<CsvColumn<ManagedUser>[]>(
     () => [
       { key: 'firstName', label: 'First name', value: (managedUser) => managedUser.firstName },
@@ -229,52 +236,43 @@ export const UserManagementPage = () => {
         label: 'Linked students',
         value: (managedUser) =>
           managedUser.linkedStudentIds
-            .map((studentId) => userNames.get(studentId) ?? studentId)
+            .map((studentId) => studentNames.get(studentId) ?? studentId)
             .join('; ')
       }
     ],
-    [userNames]
+    [studentNames]
   );
-  const filteredUsers = useMemo(() => {
-    const search = filters.search.trim().toLocaleLowerCase();
-    return users.filter((managedUser) => {
-      if (filters.role && managedUser.role !== filters.role) return false;
-      if (
-        filters.status &&
-        (filters.status === 'active') !== managedUser.isActive
-      ) return false;
-      if (!search) return true;
-      return [
-        managedUser.firstName,
-        managedUser.lastName,
-        managedUser.email,
-        managedUser.cardUid,
-        managedUser.gradeLevel,
-        managedUser.section,
-        managedUser.phoneNumber,
-        ...managedUser.linkedStudentIds.map((studentId) => userNames.get(studentId))
-      ]
-        .filter(Boolean)
-        .some((value) => value?.toLocaleLowerCase().includes(search));
-    });
-  }, [filters, userNames, users]);
-  const userPagination = usePagination(filteredUsers, USER_PAGE_SIZE);
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   if (!sessionUser) {
     return null;
   }
 
-  const closeEditor = () => {
+  const isFormDirty = () =>
+    JSON.stringify(formState) !== JSON.stringify(initialFormStateRef.current) ||
+    imageFile !== initialImageFileRef.current;
+
+  const resetEditor = () => {
     setEditorOpen(false);
     setError(null);
+    setDiscardConfirmOpen(false);
+  };
+
+  const requestCloseEditor = () => {
+    if (isFormDirty()) {
+      setDiscardConfirmOpen(true);
+      return;
+    }
+    resetEditor();
   };
 
   const openNewUser = () => {
+    const initial = createEmptyUserForm();
     setEditorMode('create');
     setSelectedUserId(null);
-    setFormState(createEmptyUserForm());
+    setFormState(initial);
+    initialFormStateRef.current = initial;
     setImageFile(null);
+    initialImageFileRef.current = null;
     setImagePreview(null);
     setError(null);
     setNotice(null);
@@ -282,10 +280,13 @@ export const UserManagementPage = () => {
   };
 
   const openEditor = (managedUser: ManagedUser) => {
+    const initial = toUserFormState(managedUser);
     setEditorMode('edit');
     setSelectedUserId(managedUser.id);
-    setFormState(toUserFormState(managedUser));
+    setFormState(initial);
+    initialFormStateRef.current = initial;
     setImageFile(null);
+    initialImageFileRef.current = null;
     setImagePreview(managedUser.imageUrl);
     setError(null);
     setNotice(null);
@@ -300,7 +301,7 @@ export const UserManagementPage = () => {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setStatus('saving');
+    setSaveStatus('saving');
     setError(null);
     setNotice(null);
 
@@ -324,9 +325,9 @@ export const UserManagementPage = () => {
         if (imageFile) {
           createdUser = await uploadAdminUserImage(activeSchool.id, createdUser.id, imageFile);
         }
-        setUsers((current) => sortUsers([createdUser, ...current]));
         setNotice(`Added ${createdUser.firstName} ${createdUser.lastName} to ${createdUser.role}.`);
-        setEditorOpen(false);
+        setReloadToken((token) => token + 1);
+        resetEditor();
         setSelectedUserId(null);
         setFormState(createEmptyUserForm());
         setImageFile(null);
@@ -353,17 +354,15 @@ export const UserManagementPage = () => {
         if (imageFile) {
           updatedUser = await uploadAdminUserImage(activeSchool.id, selectedUser.id, imageFile);
         }
-        setUsers((current) =>
-          sortUsers(current.map((managedUser) => (managedUser.id === updatedUser.id ? updatedUser : managedUser)))
-        );
         setNotice(`Updated ${updatedUser.firstName} ${updatedUser.lastName}.`);
-        setEditorOpen(false);
+        setReloadToken((token) => token + 1);
+        resetEditor();
       }
 
-      setStatus('ready');
+      setSaveStatus('idle');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save this user.');
-      setStatus('ready');
+      setSaveStatus('idle');
     }
   };
 
@@ -385,16 +384,13 @@ export const UserManagementPage = () => {
   };
 
   const handleDeactivate = async (managedUser: ManagedUser) => {
-    setStatus('saving');
     setError(null);
     setNotice(null);
 
     try {
       const updatedUser = await deactivateAdminUser(activeSchool.id, managedUser.id);
-      setUsers((current) =>
-        sortUsers(current.map((entry) => (entry.id === updatedUser.id ? updatedUser : entry)))
-      );
       setNotice(`${updatedUser.firstName} ${updatedUser.lastName} has been deactivated.`);
+      setReloadToken((token) => token + 1);
 
       if (selectedUserId === updatedUser.id) {
         setFormState(toUserFormState(updatedUser));
@@ -404,7 +400,7 @@ export const UserManagementPage = () => {
         deactivateError instanceof Error ? deactivateError.message : 'Unable to deactivate this user.'
       );
     } finally {
-      setStatus('ready');
+      setDeactivateTarget(null);
     }
   };
 
@@ -448,8 +444,8 @@ export const UserManagementPage = () => {
           .filter(Boolean)
       }));
       const result = await importAdminUsers(activeSchool.id, rows);
-      setUsers((current) => sortUsers([...result.created, ...current]));
       setImportResult(result);
+      setReloadToken((token) => token + 1);
       setNotice(
         `Imported ${result.created.length} user${result.created.length === 1 ? '' : 's'}${
           result.errors.length ? `; ${result.errors.length} row${result.errors.length === 1 ? '' : 's'} need attention` : ''
@@ -463,6 +459,37 @@ export const UserManagementPage = () => {
       setError(importFailure instanceof Error ? importFailure.message : 'Unable to import this CSV.');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const payload = await fetchAdminUsers(activeSchool.id, {
+        page: 1,
+        pageSize: EXPORT_ROW_CAP,
+        search: query.debouncedSearch || undefined,
+        sort: query.sort,
+        dir: query.dir,
+        role: (query.filters.role || undefined) as SchoolUserRole | undefined,
+        status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
+      });
+      downloadCsvColumns(
+        `${activeSchool.slug}-people-${new Date().toISOString().slice(0, 10)}.csv`,
+        userExportColumns,
+        selectedExportColumns,
+        payload.users
+      );
+      if (payload.total > payload.users.length) {
+        setNotice(
+          `Exported the first ${payload.users.length} of ${payload.total} matching people (export is capped at ${EXPORT_ROW_CAP} rows).`
+        );
+      }
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : 'Unable to export people.');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -480,19 +507,19 @@ export const UserManagementPage = () => {
 
       <div className="stats-row stats-row--admin">
         <article className="preview-panel stat-panel">
-          <p className="panel-label">Total accounts</p>
-          <strong>{counts.total}</strong>
-          <p>{counts.active} active across the current school.</p>
+          <p className="panel-label">Matching accounts</p>
+          <strong>{total}</strong>
+          <p>Across the current search and filters for this school.</p>
         </article>
         <article className="preview-panel stat-panel">
-          <p className="panel-label">Students</p>
-          <strong>{counts.students}</strong>
-          <p>RFID-attendance subjects and classroom rosters.</p>
+          <p className="panel-label">Students on file</p>
+          <strong>{studentsDirectory.length}{studentsDirectory.length >= EXPORT_ROW_CAP ? '+' : ''}</strong>
+          <p>RFID-attendance subjects available to link as guardians.</p>
         </article>
         <article className="preview-panel stat-panel">
-          <p className="panel-label">Guardians</p>
-          <strong>{counts.guardians}</strong>
-          <p>Notification recipients linked to student records later.</p>
+          <p className="panel-label">Page size</p>
+          <strong>{USER_PAGE_SIZE}</strong>
+          <p>Records loaded per page directly from the server.</p>
         </article>
       </div>
 
@@ -524,50 +551,30 @@ export const UserManagementPage = () => {
           </div>
 
           {error && !editorOpen ? (
-            <div className="form-message form-message--error" role="alert">
-              {error}
-            </div>
+            <InlineAlert tone="error" message={error} />
           ) : notice ? (
-            <div className="form-message" role="status">
-              {notice}
-            </div>
+            <InlineAlert message={notice} />
           ) : null}
 
           <ListToolbar
-            activeFilterCount={activeFilterCount}
+            activeFilterCount={query.activeFilterCount}
             exportColumns={userExportColumns}
-            exportDisabled={status === 'loading'}
-            onClear={() => {
-              setFilters(emptyUserFilters);
-              userPagination.setPage(1);
-            }}
-            onExport={() =>
-              downloadCsvColumns(
-                `${activeSchool.slug}-people-${new Date().toISOString().slice(0, 10)}.csv`,
-                userExportColumns,
-                selectedExportColumns,
-                filteredUsers
-              )
-            }
+            exportDisabled={listStatus === 'loading' || exporting}
+            onClear={query.clear}
+            onExport={() => void handleExport()}
             onExportColumnsChange={setSelectedExportColumns}
-            onSearchChange={(value) => {
-              setFilters((current) => ({ ...current, search: value }));
-              userPagination.setPage(1);
-            }}
-            resultCount={filteredUsers.length}
-            resultLabel={filteredUsers.length === 1 ? 'person' : 'people'}
-            search={filters.search}
-            searchLabel="Search name, email, class, card, or linked student"
+            onSearchChange={query.setSearch}
+            resultCount={total}
+            resultLabel={total === 1 ? 'person' : 'people'}
+            search={query.search}
+            searchLabel="Search name, email, class, or card"
             selectedExportColumns={selectedExportColumns}
           >
             <label className="compact-field">
               <span>Role</span>
               <select
-                value={filters.role}
-                onChange={(event) => {
-                  setFilters((current) => ({ ...current, role: event.target.value }));
-                  userPagination.setPage(1);
-                }}
+                value={query.filters.role}
+                onChange={(event) => query.setFilter('role', event.target.value)}
               >
                 <option value="">All roles</option>
                 {roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
@@ -576,11 +583,8 @@ export const UserManagementPage = () => {
             <label className="compact-field">
               <span>Status</span>
               <select
-                value={filters.status}
-                onChange={(event) => {
-                  setFilters((current) => ({ ...current, status: event.target.value }));
-                  userPagination.setPage(1);
-                }}
+                value={query.filters.status}
+                onChange={(event) => query.setFilter('status', event.target.value)}
               >
                 <option value="">Any status</option>
                 <option value="active">Active</option>
@@ -600,7 +604,7 @@ export const UserManagementPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {status === 'loading' ? (
+                {listStatus === 'loading' ? (
                   Array.from({ length: 5 }).map((_, index) => (
                     <tr key={`user-skeleton-${index}`}>
                       <td colSpan={canEdit ? 4 : 3}>
@@ -608,13 +612,22 @@ export const UserManagementPage = () => {
                       </td>
                     </tr>
                   ))
-                ) : filteredUsers.length === 0 ? (
+                ) : listStatus === 'error' ? (
+                  <tr>
+                    <td colSpan={canEdit ? 4 : 3}>
+                      <div className="empty-state empty-state--error" role="alert">
+                        <h3>Unable to load the roster</h3>
+                        <p>{listError ?? 'Try again in a moment.'}</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : users.length === 0 ? (
                   <tr>
                     <td colSpan={canEdit ? 4 : 3}>
                       <div className="empty-state">
-                        <h3>{activeFilterCount > 0 ? 'No matching people' : 'No users found'}</h3>
+                        <h3>{query.activeFilterCount > 0 ? 'No matching people' : 'No users found'}</h3>
                         <p>
-                          {activeFilterCount > 0
+                          {query.activeFilterCount > 0
                             ? 'Adjust or clear the filters to broaden the roster.'
                             : 'Create the first school-scoped account from the editor on this page.'}
                         </p>
@@ -622,12 +635,17 @@ export const UserManagementPage = () => {
                     </td>
                   </tr>
                 ) : (
-                  userPagination.pageItems.map((managedUser) => (
+                  users.map((managedUser) => (
                     <tr key={managedUser.id}>
                       {canEdit ? <td data-label="User">
                         <div className="user-identity">
                           {managedUser.imageUrl ? (
-                            <img src={managedUser.imageUrl} alt="" className="user-avatar" />
+                            <img
+                              src={managedUser.imageUrl}
+                              alt=""
+                              className="user-avatar"
+                              loading="lazy"
+                            />
                           ) : (
                             <span className="user-avatar user-avatar--fallback" aria-hidden="true">
                               {managedUser.firstName.slice(0, 1)}{managedUser.lastName.slice(0, 1)}
@@ -652,7 +670,7 @@ export const UserManagementPage = () => {
                               </strong>
                               <p>
                                 {managedUser.linkedStudentIds
-                                  .map((studentId) => userNames.get(studentId) ?? studentId)
+                                  .map((studentId) => studentNames.get(studentId) ?? studentId)
                                   .join(', ') || 'No students linked'}
                               </p>
                             </>
@@ -679,8 +697,8 @@ export const UserManagementPage = () => {
                           <button
                             className="secondary-button secondary-button--danger"
                             type="button"
-                            disabled={!managedUser.isActive || managedUser.id === sessionUser.id || status === 'saving'}
-                            onClick={() => void handleDeactivate(managedUser)}
+                            disabled={!managedUser.isActive || managedUser.id === sessionUser.id}
+                            onClick={() => setDeactivateTarget(managedUser)}
                           >
                             Deactivate
                           </button>
@@ -692,13 +710,13 @@ export const UserManagementPage = () => {
               </tbody>
             </table>
           </div>
-          {status !== 'loading' ? (
+          {listStatus === 'ready' ? (
             <Pagination
               itemLabel="users"
-              onPageChange={userPagination.setPage}
-              page={userPagination.page}
-              pageSize={userPagination.pageSize}
-              totalItems={userPagination.totalItems}
+              onPageChange={query.setPage}
+              page={query.page}
+              pageSize={query.pageSize}
+              totalItems={total}
             />
           ) : null}
         </article>
@@ -790,197 +808,47 @@ export const UserManagementPage = () => {
 
       <Modal
         description="Account details stay scoped to the signed-in school."
-        onClose={closeEditor}
+        onClose={requestCloseEditor}
         open={editorOpen}
         title={editorMode === 'create' ? 'Add school user' : 'Update school user'}
       >
-        <form className="admin-form modal-form" onSubmit={handleSubmit}>
-          {error ? (
-            <div className="form-message form-message--error" role="alert">
-              {error}
-            </div>
-          ) : null}
-
-          <div className="field-grid">
-            <label className="field">
-              <span>First name</span>
-              <input
-                type="text"
-                value={formState.firstName}
-                onChange={(event) => setFormState((current) => ({ ...current, firstName: event.target.value }))}
-                required
-              />
-            </label>
-
-            <label className="field">
-              <span>Last name</span>
-              <input
-                type="text"
-                value={formState.lastName}
-                onChange={(event) => setFormState((current) => ({ ...current, lastName: event.target.value }))}
-                required
-              />
-            </label>
-          </div>
-
-          <div className="field-grid">
-            <label className="field">
-              <span>Email address</span>
-              <input
-                type="email"
-                value={formState.email}
-                onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))}
-                required
-              />
-            </label>
-
-            <label className="field">
-              <span>Role</span>
-              <select
-                className="field-select"
-                value={formState.role}
-                onChange={(event) =>
-                    setFormState((current) => ({
-                      ...current,
-                      role: event.target.value as SchoolUserRole,
-                      linkedStudentIds:
-                        event.target.value === 'GUARDIAN' ? current.linkedStudentIds : []
-                    }))
-                }
-              >
-                {roleOptions.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <label className="field">
-            <span>{editorMode === 'create' ? 'Temporary password' : 'Reset password'}</span>
-            <input
-              type="password"
-              value={formState.password}
-              onChange={(event) => setFormState((current) => ({ ...current, password: event.target.value }))}
-              placeholder={editorMode === 'create' ? 'At least 8 characters' : 'Leave blank to keep current password'}
-              required={editorMode === 'create'}
-            />
-          </label>
-
-          {formState.role === 'GUARDIAN' ? (
-            <label className="field">
-              <span>Mobile number for SMS</span>
-              <input
-                type="tel"
-                value={formState.phoneNumber}
-                onChange={(event) => setFormState((current) => ({ ...current, phoneNumber: event.target.value }))}
-                placeholder="09171234567"
-              />
-              <small>Use a Philippine mobile number. Student attendance messages are sent here.</small>
-            </label>
-          ) : null}
-
-          {formState.role === 'GUARDIAN' ? (
-            <fieldset className="student-link-fieldset">
-              <legend>Linked students</legend>
-              <p>Select the students whose attendance this guardian can view.</p>
-              <div className="student-link-list">
-                {students.length > 0 ? (
-                  students.map((student) => (
-                    <label key={student.id}>
-                      <input
-                        type="checkbox"
-                        checked={formState.linkedStudentIds.includes(student.id)}
-                        onChange={(event) =>
-                          setFormState((current) => ({
-                            ...current,
-                            linkedStudentIds: event.target.checked
-                              ? [...current.linkedStudentIds, student.id]
-                              : current.linkedStudentIds.filter((id) => id !== student.id)
-                          }))
-                        }
-                      />
-                      <span>
-                        <strong>{student.firstName} {student.lastName}</strong>
-                        <small>{student.gradeLevel ?? 'No grade'}{student.section ? ` · ${student.section}` : ''}</small>
-                      </span>
-                    </label>
-                  ))
-                ) : (
-                  <p>No student accounts are available to link.</p>
-                )}
-              </div>
-            </fieldset>
-          ) : null}
-
-          <div className="field-grid field-grid--triple">
-            <label className="field">
-              <span>Card UID</span>
-              <input
-                type="text"
-                value={formState.cardUid}
-                onChange={(event) => setFormState((current) => ({ ...current, cardUid: event.target.value }))}
-                placeholder="RFID-XXXX"
-              />
-            </label>
-
-            <label className="field">
-              <span>Grade level</span>
-              <input
-                type="text"
-                value={formState.gradeLevel}
-                onChange={(event) => setFormState((current) => ({ ...current, gradeLevel: event.target.value }))}
-                placeholder="Grade 8"
-              />
-            </label>
-
-            <label className="field">
-              <span>Section</span>
-              <input
-                type="text"
-                value={formState.section}
-                onChange={(event) => setFormState((current) => ({ ...current, section: event.target.value }))}
-                placeholder="Jade"
-              />
-            </label>
-          </div>
-
-          <div className="image-upload-row">
-            {imagePreview ? (
-              <img src={imagePreview} alt="Selected user preview" className="user-avatar user-avatar--large" />
-            ) : (
-              <span className="user-avatar user-avatar--large user-avatar--fallback" aria-hidden="true">
-                {formState.firstName.slice(0, 1)}{formState.lastName.slice(0, 1)}
-              </span>
-            )}
-            <label className="field upload-field">
-              <span>User photo</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={handleImageChange}
-              />
-              <small>JPEG, PNG, or WebP. Maximum 5 MB.</small>
-            </label>
-          </div>
-
-          <div className="form-actions">
-            <button className="primary-button" type="submit" disabled={status === 'saving'}>
-              {status === 'saving'
-                ? editorMode === 'create'
-                  ? 'Creating user…'
-                  : 'Saving changes…'
-                : editorMode === 'create'
-                  ? 'Create user'
-                  : 'Save changes'}
-            </button>
-            <button className="secondary-button" type="button" onClick={closeEditor}>
-              Cancel
-            </button>
-          </div>
-        </form>
+        <UserForm
+          error={error}
+          imagePreview={imagePreview}
+          mode={editorMode}
+          onCancel={requestCloseEditor}
+          onChange={setFormState}
+          onImageChange={handleImageChange}
+          onSubmit={handleSubmit}
+          saving={saveStatus === 'saving'}
+          students={studentsDirectory}
+          value={formState}
+        />
       </Modal>
+
+      <ConfirmDialog
+        open={discardConfirmOpen}
+        title="Discard unsaved changes?"
+        description={`Closing now will lose the edits made to ${
+          editorMode === 'create' ? 'this new user' : `${formState.firstName} ${formState.lastName}`.trim() || 'this user'
+        }.`}
+        confirmLabel="Discard changes"
+        tone="danger"
+        onConfirm={resetEditor}
+        onCancel={() => setDiscardConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={deactivateTarget !== null}
+        title={deactivateTarget ? `Deactivate ${deactivateTarget.firstName} ${deactivateTarget.lastName}?` : 'Deactivate user?'}
+        description="Their account will no longer be able to sign in or hold an active RFID card."
+        confirmLabel="Deactivate"
+        tone="danger"
+        onConfirm={() => {
+          if (deactivateTarget) void handleDeactivate(deactivateTarget);
+        }}
+        onCancel={() => setDeactivateTarget(null)}
+      />
     </section>
   );
 };

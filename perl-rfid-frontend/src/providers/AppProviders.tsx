@@ -17,7 +17,12 @@ const genericSchool: SchoolProfile = {
   },
   contactEmail: 'support@perl.system',
   smsEnabled: false,
-  smsSenderName: null
+  smsSenderName: null,
+  address: null,
+  phone: null,
+  timezone: 'Asia/Manila',
+  academicYearLabel: null,
+  depedSchoolId: null
 };
 
 export const AppProviders = ({ children }: PropsWithChildren) => {

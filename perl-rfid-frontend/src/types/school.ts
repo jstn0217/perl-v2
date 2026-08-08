@@ -13,4 +13,9 @@ export interface SchoolProfile {
   contactEmail: string;
   smsEnabled: boolean;
   smsSenderName: string | null;
+  address: string | null;
+  phone: string | null;
+  timezone: string;
+  academicYearLabel: string | null;
+  depedSchoolId: string | null;
 }

@@ -17,6 +17,11 @@ type SchoolProfileFormState = {
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
+  address: string;
+  phone: string;
+  timezone: string;
+  academicYearLabel: string;
+  depedSchoolId: string;
 };
 
 const toFormState = (school: SchoolProfile): SchoolProfileFormState => ({
@@ -25,7 +30,12 @@ const toFormState = (school: SchoolProfile): SchoolProfileFormState => ({
   logoUrl: school.logoUrl ?? '',
   primaryColor: school.theme.primaryColor,
   secondaryColor: school.theme.secondaryColor,
-  accentColor: school.theme.accentColor
+  accentColor: school.theme.accentColor,
+  address: school.address ?? '',
+  phone: school.phone ?? '',
+  timezone: school.timezone ?? '',
+  academicYearLabel: school.academicYearLabel ?? '',
+  depedSchoolId: school.depedSchoolId ?? ''
 });
 
 export const SchoolProfileAdminPage = () => {
@@ -101,7 +111,12 @@ export const SchoolProfileAdminPage = () => {
           primaryColor: formState.primaryColor,
           secondaryColor: formState.secondaryColor,
           accentColor: formState.accentColor
-        }
+        },
+        address: formState.address.trim() || null,
+        phone: formState.phone.trim() || null,
+        timezone: formState.timezone.trim(),
+        academicYearLabel: formState.academicYearLabel.trim() || null,
+        depedSchoolId: formState.depedSchoolId.trim() || null
       });
 
       if (logoFile) {
@@ -255,6 +270,63 @@ export const SchoolProfileAdminPage = () => {
                 onChange={(event) => setFormState((current) => ({ ...current, accentColor: event.target.value }))}
               />
               <strong>{formState.accentColor}</strong>
+            </label>
+          </div>
+
+          <div className="form-section-divider">
+            <p className="panel-label">Institution details</p>
+            <p className="section-copy">Official information used on records and reports.</p>
+          </div>
+
+          <div className="field-grid">
+            <label className="field">
+              <span>Address</span>
+              <input
+                type="text"
+                value={formState.address}
+                onChange={(event) => setFormState((current) => ({ ...current, address: event.target.value }))}
+                placeholder="Street, city, province"
+              />
+            </label>
+
+            <label className="field">
+              <span>Phone</span>
+              <input
+                type="tel"
+                value={formState.phone}
+                onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))}
+                placeholder="e.g. (02) 8123 4567"
+              />
+            </label>
+
+            <label className="field">
+              <span>Timezone</span>
+              <input
+                type="text"
+                value={formState.timezone}
+                onChange={(event) => setFormState((current) => ({ ...current, timezone: event.target.value }))}
+                placeholder="Asia/Manila"
+              />
+            </label>
+
+            <label className="field">
+              <span>Academic year</span>
+              <input
+                type="text"
+                value={formState.academicYearLabel}
+                onChange={(event) => setFormState((current) => ({ ...current, academicYearLabel: event.target.value }))}
+                placeholder="e.g. SY 2025-2026"
+              />
+            </label>
+
+            <label className="field">
+              <span>DepEd school ID</span>
+              <input
+                type="text"
+                value={formState.depedSchoolId}
+                onChange={(event) => setFormState((current) => ({ ...current, depedSchoolId: event.target.value }))}
+                placeholder="e.g. 123456"
+              />
             </label>
           </div>
           </fieldset>

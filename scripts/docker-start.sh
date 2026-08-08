@@ -11,8 +11,8 @@ export JWT_COOKIE_NAME="${JWT_COOKIE_NAME:-perl_session}"
 export JWT_EXPIRES_IN_SECONDS="${JWT_EXPIRES_IN_SECONDS:-28800}"
 export COOKIE_SECURE="${COOKIE_SECURE:-false}"
 export VITE_API_URL="${VITE_API_URL:-http://localhost:4000}"
-export DB_HOST="${DB_HOST:-mysql}"
-export DB_PORT="${DB_PORT:-3306}"
+export DB_HOST="${DB_HOST:-postgres}"
+export DB_PORT="${DB_PORT:-5432}"
 export DB_USER="${DB_USER:-perl}"
 export DB_PASSWORD="${DB_PASSWORD:-perl_dev_password}"
 export DB_NAME="${DB_NAME:-perl}"
@@ -20,10 +20,10 @@ export DB_SSL="${DB_SSL:-false}"
 export AWS_REGION="${AWS_REGION:-ap-southeast-1}"
 export S3_BUCKET="${S3_BUCKET:-}"
 export S3_PUBLIC_BASE_URL="${S3_PUBLIC_BASE_URL:-}"
-export WAIT_FOR_MYSQL="${WAIT_FOR_MYSQL:-auto}"
+export WAIT_FOR_DB="${WAIT_FOR_DB:-auto}"
 
-if [ "$WAIT_FOR_MYSQL" = "true" ] || { [ "$WAIT_FOR_MYSQL" = "auto" ] && [ "$DATA_LAYER" = "db" ]; }; then
-  sh /app/scripts/wait-for-mysql.sh
+if [ "$WAIT_FOR_DB" = "true" ] || { [ "$WAIT_FOR_DB" = "auto" ] && [ "$DATA_LAYER" = "db" ]; }; then
+  sh /app/scripts/wait-for-postgres.sh
 fi
 
 cd /app/perl-api

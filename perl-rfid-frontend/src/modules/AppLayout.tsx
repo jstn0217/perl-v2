@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { AccountMenu } from '../components/AccountMenu';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { SchoolMark } from '../components/SchoolMark';
 import { AppNavigationDrawer } from './AppNavigationDrawer';
@@ -51,46 +52,40 @@ export const AppLayout = () => {
 
           <div className="dashboard-actions">
             {isPlatformUser(user?.role) ? (
-              <label className="support-school-switcher">
-                <span>Support context</span>
-                <select
-                  value={activeSchool.slug}
-                  onChange={(event) => {
-                    const selected = schools.find(
-                      (availableSchool) => availableSchool.slug === event.target.value
-                    );
-                    if (!selected) return;
-                    setSupportContextError(null);
-                    void enterSupportSchool(selected.id)
-                      .then(() => setActiveSchoolSlug(selected.slug))
-                      .catch((error) =>
-                        setSupportContextError(
-                          error instanceof Error ? error.message : 'Unable to change support context.'
-                        )
+              <div className="support-context">
+                <label className="support-context__field">
+                  <span>Support context</span>
+                  <select
+                    value={activeSchool.slug}
+                    onChange={(event) => {
+                      const selected = schools.find(
+                        (availableSchool) => availableSchool.slug === event.target.value
                       );
-                  }}
-                  aria-label="Select school support context"
-                >
-                  {schools.map((availableSchool) => (
-                    <option key={availableSchool.id} value={availableSchool.slug}>
-                      {availableSchool.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                      if (!selected) return;
+                      setSupportContextError(null);
+                      void enterSupportSchool(selected.id)
+                        .then(() => setActiveSchoolSlug(selected.slug))
+                        .catch((error) =>
+                          setSupportContextError(
+                            error instanceof Error ? error.message : 'Unable to change support context.'
+                          )
+                        );
+                    }}
+                    aria-label="Select school support context"
+                  >
+                    {schools.map((availableSchool) => (
+                      <option key={availableSchool.id} value={availableSchool.slug}>
+                        {availableSchool.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {supportContextError ? (
+                  <span className="support-context-error" role="alert">{supportContextError}</span>
+                ) : null}
+              </div>
             ) : null}
-            {supportContextError ? (
-              <span className="support-context-error" role="alert">{supportContextError}</span>
-            ) : null}
-            <div className="user-chip">
-              <span className="user-chip__avatar" aria-hidden="true">
-                {user?.firstName.slice(0, 1)}{user?.lastName.slice(0, 1)}
-              </span>
-              <span className="user-chip__identity">
-                <strong>{user?.firstName} {user?.lastName}</strong>
-                <small>{roleLabel}</small>
-              </span>
-            </div>
+            {user ? <AccountMenu user={user} roleLabel={roleLabel} onSignOut={() => void logout()} /> : null}
             <button
               className="menu-button"
               type="button"

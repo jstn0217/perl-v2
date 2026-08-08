@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { IDeviceRepository } from '../repositories/interfaces/IDeviceRepository.js';
+import type { DeviceListQuery, IDeviceRepository } from '../repositories/interfaces/IDeviceRepository.js';
+import type { PagedResult } from '../types/Pagination.js';
 import type { DeviceRecord, DeviceView } from '../types/Device.js';
 
 export interface RegisteredDevice {
@@ -14,6 +15,12 @@ export class DeviceService {
     const devices = await this.deviceRepository.listBySchool(schoolId);
 
     return devices.map((device) => this.toDeviceView(device));
+  }
+
+  async listDevicesPaged(schoolId: string, query: DeviceListQuery): Promise<PagedResult<DeviceView>> {
+    const { items, total } = await this.deviceRepository.listBySchoolPaged(schoolId, query);
+
+    return { items: items.map((device) => this.toDeviceView(device)), total };
   }
 
   async registerDevice(schoolId: string, name?: string, location?: string): Promise<RegisteredDevice> {

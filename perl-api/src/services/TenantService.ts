@@ -73,13 +73,31 @@ export class TenantService {
       theme,
       contactEmail,
       smsEnabled: false,
-      smsSenderName: null
+      smsSenderName: null,
+      address: null,
+      phone: null,
+      timezone: 'Asia/Manila',
+      academicYearLabel: null,
+      depedSchoolId: null
     });
   }
 
   async updateSchoolProfile(
     schoolId: string,
-    changes: Partial<Pick<SchoolProfile, 'name' | 'logoUrl' | 'contactEmail' | 'theme'>>
+    changes: Partial<
+      Pick<
+        SchoolProfile,
+        | 'name'
+        | 'logoUrl'
+        | 'contactEmail'
+        | 'theme'
+        | 'address'
+        | 'phone'
+        | 'timezone'
+        | 'academicYearLabel'
+        | 'depedSchoolId'
+      >
+    >
   ): Promise<SchoolProfile> {
     const updated = await this.tenantRepository.updateSchoolProfile(schoolId, changes);
 

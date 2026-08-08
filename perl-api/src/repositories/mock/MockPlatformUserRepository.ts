@@ -20,4 +20,19 @@ export class MockPlatformUserRepository implements IPlatformUserRepository {
   async findById(userId: string): Promise<PlatformUserRecord | null> {
     return platformUsers.find((user) => user.id === userId && user.isActive) ?? null;
   }
+
+  async updateProfile(
+    userId: string,
+    changes: Partial<Pick<PlatformUserRecord, 'firstName' | 'lastName' | 'passwordHash'>>
+  ): Promise<PlatformUserRecord | null> {
+    const user = platformUsers.find((entry) => entry.id === userId);
+
+    if (!user) {
+      return null;
+    }
+
+    Object.assign(user, changes);
+
+    return user;
+  }
 }

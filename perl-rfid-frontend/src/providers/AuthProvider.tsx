@@ -124,7 +124,8 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         error,
         login,
         logout,
-        clearError: () => setError(null)
+        clearError: () => setError(null),
+        updateUser: (updatedUser) => setUser(updatedUser)
       }}
     >
       {children}

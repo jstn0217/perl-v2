@@ -1,11 +1,36 @@
+import type { PagedResult } from '../../types/Pagination.js';
 import type { UserRecord } from '../../types/User.js';
-import type { IUserRepository } from '../interfaces/IUserRepository.js';
+import type { IUserRepository, UserListQuery } from '../interfaces/IUserRepository.js';
 import { createMockUsers } from './seeds.js';
 
 let mockUsers: UserRecord[] = createMockUsers();
 
 export const resetMockUsers = () => {
   mockUsers = createMockUsers();
+};
+
+const compareUsersByField = (
+  field: string,
+  a: { user: UserRecord; index: number },
+  b: { user: UserRecord; index: number }
+): number => {
+  switch (field) {
+    case 'email':
+      return a.user.email.localeCompare(b.user.email);
+    case 'role':
+      return a.user.role.localeCompare(b.user.role);
+    case 'status':
+      return Number(a.user.isActive) - Number(b.user.isActive);
+    case 'createdAt':
+      // Mock array order reflects insertion/creation order; use it as a createdAt stand-in.
+      return a.index - b.index;
+    case 'name':
+    default:
+      return (
+        a.user.lastName.localeCompare(b.user.lastName) ||
+        a.user.firstName.localeCompare(b.user.firstName)
+      );
+  }
 };
 
 export class MockUserRepository implements IUserRepository {
@@ -61,6 +86,39 @@ export class MockUserRepository implements IUserRepository {
 
   async listBySchool(schoolId: string): Promise<UserRecord[]> {
     return mockUsers.filter((user) => user.schoolId === schoolId);
+  }
+
+  async listBySchoolPaged(schoolId: string, query: UserListQuery): Promise<PagedResult<UserRecord>> {
+    const search = query.search?.trim().toLowerCase();
+
+    const matches = mockUsers
+      .map((user, index) => ({ user, index }))
+      .filter(({ user }) => {
+        if (user.schoolId !== schoolId) return false;
+        if (query.role && user.role !== query.role) return false;
+        if (query.status === 'active' && !user.isActive) return false;
+        if (query.status === 'inactive' && user.isActive) return false;
+        if (search) {
+          const haystack = `${user.firstName} ${user.lastName} ${user.email}`.toLowerCase();
+          if (!haystack.includes(search)) return false;
+        }
+        return true;
+      });
+
+    const direction = query.dir === 'desc' ? -1 : 1;
+    const sortField = query.sort ?? 'name';
+
+    matches.sort((a, b) => {
+      const compared = compareUsersByField(sortField, a, b);
+      if (compared !== 0) return compared * direction;
+      return a.user.id.localeCompare(b.user.id);
+    });
+
+    const total = matches.length;
+    const start = (query.page - 1) * query.pageSize;
+    const items = matches.slice(start, start + query.pageSize).map(({ user }) => user);
+
+    return { items, total };
   }
 
   async create(user: UserRecord): Promise<UserRecord> {

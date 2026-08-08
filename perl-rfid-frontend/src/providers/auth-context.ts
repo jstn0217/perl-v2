@@ -13,6 +13,7 @@ export interface AuthContextValue {
   login: (values: LoginFormValues) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
+  updateUser: (user: SessionUser) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

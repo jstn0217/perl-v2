@@ -20,6 +20,7 @@ export const StudentAvatar = ({
         className={className}
         src={imageUrl}
         alt={`${student.firstName} ${student.lastName}`}
+        loading={variant === 'live' ? 'eager' : 'lazy'}
         onError={() => setFailedImageUrl(imageUrl)}
       />
     );

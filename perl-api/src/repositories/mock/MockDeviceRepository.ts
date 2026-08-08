@@ -1,11 +1,31 @@
+import type { PagedResult } from '../../types/Pagination.js';
 import type { DeviceRecord } from '../../types/Device.js';
-import type { IDeviceRepository } from '../interfaces/IDeviceRepository.js';
+import type { DeviceListQuery, IDeviceRepository } from '../interfaces/IDeviceRepository.js';
 import { createMockDevices } from './seeds.js';
 
 let mockDevices: DeviceRecord[] = createMockDevices();
 
 export const resetMockDevices = () => {
   mockDevices = createMockDevices();
+};
+
+const compareDevicesByField = (
+  field: string,
+  a: { device: DeviceRecord; index: number },
+  b: { device: DeviceRecord; index: number }
+): number => {
+  switch (field) {
+    case 'location':
+      return a.device.location.localeCompare(b.device.location);
+    case 'status':
+      return Number(a.device.isActive) - Number(b.device.isActive);
+    case 'createdAt':
+      // Mock array order reflects insertion/creation order; use it as a createdAt stand-in.
+      return a.index - b.index;
+    case 'name':
+    default:
+      return a.device.name.localeCompare(b.device.name);
+  }
 };
 
 export class MockDeviceRepository implements IDeviceRepository {
@@ -23,6 +43,38 @@ export class MockDeviceRepository implements IDeviceRepository {
 
   async listBySchool(schoolId: string): Promise<DeviceRecord[]> {
     return mockDevices.filter((device) => device.schoolId === schoolId);
+  }
+
+  async listBySchoolPaged(schoolId: string, query: DeviceListQuery): Promise<PagedResult<DeviceRecord>> {
+    const search = query.search?.trim().toLowerCase();
+
+    const matches = mockDevices
+      .map((device, index) => ({ device, index }))
+      .filter(({ device }) => {
+        if (device.schoolId !== schoolId) return false;
+        if (query.status === 'active' && !device.isActive) return false;
+        if (query.status === 'inactive' && device.isActive) return false;
+        if (search) {
+          const haystack = `${device.name} ${device.location}`.toLowerCase();
+          if (!haystack.includes(search)) return false;
+        }
+        return true;
+      });
+
+    const direction = query.dir === 'desc' ? -1 : 1;
+    const sortField = query.sort ?? 'name';
+
+    matches.sort((a, b) => {
+      const compared = compareDevicesByField(sortField, a, b);
+      if (compared !== 0) return compared * direction;
+      return a.device.id.localeCompare(b.device.id);
+    });
+
+    const total = matches.length;
+    const start = (query.page - 1) * query.pageSize;
+    const items = matches.slice(start, start + query.pageSize).map(({ device }) => device);
+
+    return { items, total };
   }
 
   async create(device: DeviceRecord): Promise<DeviceRecord> {

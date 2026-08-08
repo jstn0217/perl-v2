@@ -78,7 +78,7 @@ export const env = {
   },
   db: {
     host: process.env.DB_HOST ?? '127.0.0.1',
-    port: resolvePositiveInteger(process.env.DB_PORT, 3306),
+    port: resolvePositiveInteger(process.env.DB_PORT, 5432),
     user: process.env.DB_USER ?? 'perl',
     password: process.env.DB_PASSWORD ?? defaultDbPassword,
     name: process.env.DB_NAME ?? 'perl',

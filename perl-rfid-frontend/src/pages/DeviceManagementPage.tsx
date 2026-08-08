@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { InlineAlert } from '../components/InlineAlert';
 import { Modal } from '../components/Modal';
 import { ListToolbar } from '../components/ListToolbar';
 import { Pagination } from '../components/Pagination';
-import { usePagination } from '../hooks/usePagination';
+import { useListQueryState } from '../hooks/useListQueryState';
 import {
   createAdminDevice,
   deactivateAdminDevice,
@@ -21,8 +23,8 @@ type DeviceFormState = {
 };
 
 const DEVICE_PAGE_SIZE = 6;
+const EXPORT_ROW_CAP = 100;
 const emptyDeviceFilters = {
-  search: '',
   status: ''
 };
 const deviceExportColumns: CsvColumn<ManagedDevice>[] = [
@@ -43,91 +45,139 @@ const createEmptyForm = (): DeviceFormState => ({
   location: ''
 });
 
-const sortDevices = (devices: ManagedDevice[]) =>
-  [...devices].sort((left, right) => {
-    if (left.isActive !== right.isActive) {
-      return left.isActive ? -1 : 1;
-    }
-
-    return left.name.localeCompare(right.name);
-  });
-
 export const DeviceManagementPage = () => {
   const { user } = useAuth();
   const { activeSchool } = useTenantContext();
   const canEdit = canManageSchool(user?.role);
-  const [devices, setDevices] = useState<ManagedDevice[]>([]);
+  const query = useListQueryState({
+    pageSize: DEVICE_PAGE_SIZE,
+    defaultSort: 'name',
+    defaultFilters: emptyDeviceFilters
+  });
+
+  const [listState, setListState] = useState<{
+    requestKey: string;
+    devices: ManagedDevice[];
+    total: number;
+  } | null>(null);
+  const [listErrorState, setListErrorState] = useState<{ requestKey: string; message: string } | null>(
+    null
+  );
+  const [reloadToken, setReloadToken] = useState(0);
+
   const [formState, setFormState] = useState<DeviceFormState>(createEmptyForm);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'saving'>('loading');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [issuedDevice, setIssuedDevice] = useState<RegisteredDeviceResponse | null>(null);
   const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const initialFormStateRef = useRef<DeviceFormState>(createEmptyForm());
   const [deviceAction, setDeviceAction] = useState<{
     deviceId: string;
     type: 'rotate' | 'deactivate';
   } | null>(null);
-  const [filters, setFilters] = useState(emptyDeviceFilters);
-  const [selectedExportColumns, setSelectedExportColumns] = useState(
-    defaultDeviceExportColumns
-  );
+  const [rotateTarget, setRotateTarget] = useState<ManagedDevice | null>(null);
+  const [deactivateTarget, setDeactivateTarget] = useState<ManagedDevice | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [selectedExportColumns, setSelectedExportColumns] = useState(defaultDeviceExportColumns);
+
+  const listRequestKey = [
+    activeSchool.id,
+    query.page,
+    query.pageSize,
+    query.debouncedSearch,
+    query.sort,
+    query.dir,
+    query.filters.status,
+    reloadToken
+  ].join('|');
 
   useEffect(() => {
-    if (!user) {
-      return;
-    }
-
+    if (!user) return;
     let cancelled = false;
 
-    void fetchAdminDevices(activeSchool.id)
+    void fetchAdminDevices(activeSchool.id, {
+      page: query.page,
+      pageSize: query.pageSize,
+      search: query.debouncedSearch || undefined,
+      sort: query.sort,
+      dir: query.dir,
+      status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
+    })
       .then((payload) => {
-        if (cancelled) {
-          return;
-        }
-
-        setDevices(sortDevices(payload));
-        setStatus('ready');
+        if (cancelled) return;
+        setListState({ requestKey: listRequestKey, devices: payload.devices, total: payload.total });
+        setListErrorState(null);
       })
       .catch((loadError) => {
-        if (cancelled) {
-          return;
-        }
-
-        setError(loadError instanceof Error ? loadError.message : 'Unable to load school devices.');
-        setStatus('ready');
+        if (cancelled) return;
+        setListErrorState({
+          requestKey: listRequestKey,
+          message: loadError instanceof Error ? loadError.message : 'Unable to load school devices.'
+        });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeSchool.id, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listRequestKey, user]);
+
+  const devices = useMemo(
+    () => (listState?.requestKey === listRequestKey ? listState.devices : []),
+    [listRequestKey, listState]
+  );
+  // Keep the last known total visible while a refetch is in flight so the toolbar's
+  // aria-live result count doesn't announce a misleading "0 devices" mid-search.
+  const total = listState?.total ?? 0;
+  const listStatus: 'loading' | 'ready' | 'error' =
+    listErrorState?.requestKey === listRequestKey
+      ? 'error'
+      : listState?.requestKey === listRequestKey
+        ? 'ready'
+        : 'loading';
+  const listError = listErrorState?.requestKey === listRequestKey ? listErrorState.message : null;
 
   const counts = useMemo(
     () => ({
-      total: devices.length,
       active: devices.filter((device) => device.isActive).length
     }),
     [devices]
   );
-  const filteredDevices = useMemo(() => {
-    const search = filters.search.trim().toLocaleLowerCase();
-    return devices.filter((device) => {
-      if (filters.status && (filters.status === 'active') !== device.isActive) return false;
-      if (!search) return true;
-      return [device.name, device.location, device.id, device.keyLastFour]
-        .some((value) => value.toLocaleLowerCase().includes(search));
-    });
-  }, [devices, filters]);
-  const devicePagination = usePagination(filteredDevices, DEVICE_PAGE_SIZE);
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   if (!user) {
     return null;
   }
 
+  const isFormDirty = () => JSON.stringify(formState) !== JSON.stringify(initialFormStateRef.current);
+
+  const closeRegistration = () => {
+    setRegistrationOpen(false);
+    setError(null);
+    setDiscardConfirmOpen(false);
+  };
+
+  const requestCloseRegistration = () => {
+    if (isFormDirty()) {
+      setDiscardConfirmOpen(true);
+      return;
+    }
+    closeRegistration();
+  };
+
+  const openRegistration = () => {
+    const initial = createEmptyForm();
+    setFormState(initial);
+    initialFormStateRef.current = initial;
+    setError(null);
+    setNotice(null);
+    setRegistrationOpen(true);
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setStatus('saving');
+    setSaveStatus('saving');
     setError(null);
     setNotice(null);
 
@@ -137,42 +187,28 @@ export const DeviceManagementPage = () => {
         location: formState.location
       });
 
-      setDevices((current) => sortDevices([result.device, ...current]));
       setIssuedDevice(result);
       setNotice(`${result.device.name} is now registered for ${result.device.location}.`);
       setFormState(createEmptyForm());
-      setRegistrationOpen(false);
-      setStatus('ready');
+      setReloadToken((token) => token + 1);
+      closeRegistration();
+      setSaveStatus('idle');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to register this device.');
-      setStatus('ready');
+      setSaveStatus('idle');
     }
   };
 
-  const replaceDevice = (updatedDevice: ManagedDevice) => {
-    setDevices((current) =>
-      sortDevices(current.map((device) => (device.id === updatedDevice.id ? updatedDevice : device)))
-    );
-  };
-
   const handleRotateKey = async (device: ManagedDevice) => {
-    const replacesVisibleKey = issuedDevice !== null;
-    const confirmed = window.confirm(
-      `${replacesVisibleKey ? 'The currently displayed one-time key will be replaced. ' : ''}` +
-        `Rotate ${device.name}'s key? Its current key will stop working immediately.`
-    );
-
-    if (!confirmed) return;
-
     setDeviceAction({ deviceId: device.id, type: 'rotate' });
     setError(null);
     setNotice(null);
 
     try {
       const result = await rotateAdminDeviceKey(activeSchool.id, device.id);
-      replaceDevice(result.device);
       setIssuedDevice(result);
       setNotice(`${result.device.name}'s previous key is revoked. Save the replacement key now.`);
+      setReloadToken((token) => token + 1);
     } catch (rotateError) {
       setError(
         rotateError instanceof Error
@@ -181,25 +217,20 @@ export const DeviceManagementPage = () => {
       );
     } finally {
       setDeviceAction(null);
+      setRotateTarget(null);
     }
   };
 
   const handleDeactivate = async (device: ManagedDevice) => {
-    const confirmed = window.confirm(
-      `Deactivate ${device.name}? Its device key will stop working immediately and cannot be reactivated here.`
-    );
-
-    if (!confirmed) return;
-
     setDeviceAction({ deviceId: device.id, type: 'deactivate' });
     setError(null);
     setNotice(null);
 
     try {
       const updatedDevice = await deactivateAdminDevice(activeSchool.id, device.id);
-      replaceDevice(updatedDevice);
       if (issuedDevice?.device.id === device.id) setIssuedDevice(null);
       setNotice(`${updatedDevice.name} is inactive. Its last issued key is now rejected.`);
+      setReloadToken((token) => token + 1);
     } catch (deactivateError) {
       setError(
         deactivateError instanceof Error
@@ -208,6 +239,37 @@ export const DeviceManagementPage = () => {
       );
     } finally {
       setDeviceAction(null);
+      setDeactivateTarget(null);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const payload = await fetchAdminDevices(activeSchool.id, {
+        page: 1,
+        pageSize: EXPORT_ROW_CAP,
+        search: query.debouncedSearch || undefined,
+        sort: query.sort,
+        dir: query.dir,
+        status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
+      });
+      downloadCsvColumns(
+        `${activeSchool.slug}-devices-${new Date().toISOString().slice(0, 10)}.csv`,
+        deviceExportColumns,
+        selectedExportColumns,
+        payload.devices
+      );
+      if (payload.total > payload.devices.length) {
+        setNotice(
+          `Exported the first ${payload.devices.length} of ${payload.total} matching devices (export is capped at ${EXPORT_ROW_CAP} rows).`
+        );
+      }
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : 'Unable to export devices.');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -225,9 +287,9 @@ export const DeviceManagementPage = () => {
 
       <div className="stats-row stats-row--admin">
         <article className="preview-panel stat-panel">
-          <p className="panel-label">Registered devices</p>
-          <strong>{counts.total}</strong>
-          <p>{counts.active} active scanners currently mapped to this school.</p>
+          <p className="panel-label">Matching devices</p>
+          <strong>{total}</strong>
+          <p>{counts.active} active on this page, across the current search and filters.</p>
         </article>
         <article className="preview-panel stat-panel">
           <p className="panel-label">Issued key policy</p>
@@ -249,16 +311,8 @@ export const DeviceManagementPage = () => {
               <h3>Registered scanners</h3>
             </div>
             <div className="table-actions">
-              <span className="status-pill status-pill--muted">{counts.active} active</span>
-              {canEdit ? <button
-                className="secondary-button"
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setNotice(null);
-                  setRegistrationOpen(true);
-                }}
-              >
+              <span className="status-pill status-pill--muted">{counts.active} active on page</span>
+              {canEdit ? <button className="secondary-button" type="button" onClick={openRegistration}>
                 Register scanner
               </button> : (
                 <span className="status-pill status-pill--muted">Read-only support view</span>
@@ -267,54 +321,32 @@ export const DeviceManagementPage = () => {
           </div>
 
           {error && !registrationOpen ? (
-            <div className="form-message form-message--error" role="alert">
-              {error}
-            </div>
+            <InlineAlert tone="error" message={error} />
           ) : notice ? (
-            <div className="form-message" role="status">
-              {notice}
-            </div>
+            <InlineAlert message={notice} />
           ) : (
-            <div className="form-message">
-              The roster below is the durable view after provisioning. Full device keys are never reloaded from storage.
-            </div>
+            <InlineAlert message="The roster below is the durable view after provisioning. Full device keys are never reloaded from storage." />
           )}
 
           <ListToolbar
-            activeFilterCount={activeFilterCount}
+            activeFilterCount={query.activeFilterCount}
             exportColumns={deviceExportColumns}
-            exportDisabled={status === 'loading'}
-            onClear={() => {
-              setFilters(emptyDeviceFilters);
-              devicePagination.setPage(1);
-            }}
-            onExport={() =>
-              downloadCsvColumns(
-                `${activeSchool.slug}-devices-${new Date().toISOString().slice(0, 10)}.csv`,
-                deviceExportColumns,
-                selectedExportColumns,
-                filteredDevices
-              )
-            }
+            exportDisabled={listStatus === 'loading' || exporting}
+            onClear={query.clear}
+            onExport={() => void handleExport()}
             onExportColumnsChange={setSelectedExportColumns}
-            onSearchChange={(value) => {
-              setFilters((current) => ({ ...current, search: value }));
-              devicePagination.setPage(1);
-            }}
-            resultCount={filteredDevices.length}
-            resultLabel={filteredDevices.length === 1 ? 'device' : 'devices'}
-            search={filters.search}
+            onSearchChange={query.setSearch}
+            resultCount={total}
+            resultLabel={total === 1 ? 'device' : 'devices'}
+            search={query.search}
             searchLabel="Search device, location, ID, or key suffix"
             selectedExportColumns={selectedExportColumns}
           >
             <label className="compact-field">
               <span>Status</span>
               <select
-                value={filters.status}
-                onChange={(event) => {
-                  setFilters((current) => ({ ...current, status: event.target.value }));
-                  devicePagination.setPage(1);
-                }}
+                value={query.filters.status}
+                onChange={(event) => query.setFilter('status', event.target.value)}
               >
                 <option value="">Any status</option>
                 <option value="active">Active</option>
@@ -337,19 +369,24 @@ export const DeviceManagementPage = () => {
           ) : null}
 
           <div className="device-list">
-            {status === 'loading' ? (
+            {listStatus === 'loading' ? (
               Array.from({ length: 4 }).map((_, index) => <div className="table-skeleton" key={`device-skeleton-${index}`} />)
-            ) : filteredDevices.length === 0 ? (
+            ) : listStatus === 'error' ? (
+              <div className="empty-state empty-state--error" role="alert">
+                <h3>Unable to load the device roster</h3>
+                <p>{listError ?? 'Try again in a moment.'}</p>
+              </div>
+            ) : devices.length === 0 ? (
               <div className="empty-state">
-                <h3>{activeFilterCount > 0 ? 'No matching devices' : 'No devices registered yet'}</h3>
+                <h3>{query.activeFilterCount > 0 ? 'No matching devices' : 'No devices registered yet'}</h3>
                 <p>
-                  {activeFilterCount > 0
+                  {query.activeFilterCount > 0
                     ? 'Adjust or clear the filters to broaden the scanner roster.'
                     : 'Create the first scanner profile from the registration form on this page.'}
                 </p>
               </div>
             ) : (
-              devicePagination.pageItems.map((device) => (
+              devices.map((device) => (
                 <article className="device-card" key={device.id}>
                   <div className="device-card__header">
                     <div>
@@ -376,7 +413,7 @@ export const DeviceManagementPage = () => {
                         className="secondary-button secondary-button--compact"
                         type="button"
                         disabled={deviceAction !== null}
-                        onClick={() => void handleRotateKey(device)}
+                        onClick={() => setRotateTarget(device)}
                       >
                         {deviceAction?.deviceId === device.id && deviceAction.type === 'rotate'
                           ? 'Rotating key…'
@@ -386,7 +423,7 @@ export const DeviceManagementPage = () => {
                         className="secondary-button secondary-button--danger secondary-button--compact"
                         type="button"
                         disabled={deviceAction !== null}
-                        onClick={() => void handleDeactivate(device)}
+                        onClick={() => setDeactivateTarget(device)}
                       >
                         {deviceAction?.deviceId === device.id && deviceAction.type === 'deactivate'
                           ? 'Deactivating…'
@@ -400,13 +437,13 @@ export const DeviceManagementPage = () => {
               ))
             )}
           </div>
-          {status !== 'loading' ? (
+          {listStatus === 'ready' ? (
             <Pagination
               itemLabel="devices"
-              onPageChange={devicePagination.setPage}
-              page={devicePagination.page}
-              pageSize={devicePagination.pageSize}
-              totalItems={devicePagination.totalItems}
+              onPageChange={query.setPage}
+              page={query.page}
+              pageSize={query.pageSize}
+              totalItems={total}
             />
           ) : null}
         </article>
@@ -414,10 +451,7 @@ export const DeviceManagementPage = () => {
 
       <Modal
         description="The device key is revealed once after registration."
-        onClose={() => {
-          setRegistrationOpen(false);
-          setError(null);
-        }}
+        onClose={requestCloseRegistration}
         open={registrationOpen}
         title="Register a new scanner"
       >
@@ -459,19 +493,53 @@ export const DeviceManagementPage = () => {
           </div>
 
           <div className="form-actions">
-            <button className="primary-button" type="submit" disabled={status === 'saving'}>
-              {status === 'saving' ? 'Registering device…' : 'Register device'}
+            <button className="primary-button" type="submit" disabled={saveStatus === 'saving'}>
+              {saveStatus === 'saving' ? 'Registering device…' : 'Register device'}
             </button>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setRegistrationOpen(false)}
-            >
+            <button className="secondary-button" type="button" onClick={requestCloseRegistration}>
               Cancel
             </button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={discardConfirmOpen}
+        title="Discard unsaved changes?"
+        description="Closing now will lose the device name and location you entered."
+        confirmLabel="Discard changes"
+        tone="danger"
+        onConfirm={closeRegistration}
+        onCancel={() => setDiscardConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={rotateTarget !== null}
+        title={rotateTarget ? `Rotate ${rotateTarget.name}'s key?` : 'Rotate device key?'}
+        description={
+          issuedDevice
+            ? "The currently displayed one-time key will be replaced. Its current key will stop working immediately."
+            : "Its current key will stop working immediately."
+        }
+        confirmLabel="Rotate key"
+        tone="danger"
+        onConfirm={() => {
+          if (rotateTarget) void handleRotateKey(rotateTarget);
+        }}
+        onCancel={() => setRotateTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={deactivateTarget !== null}
+        title={deactivateTarget ? `Deactivate ${deactivateTarget.name}?` : 'Deactivate device?'}
+        description="Its device key will stop working immediately and cannot be reactivated here."
+        confirmLabel="Deactivate"
+        tone="danger"
+        onConfirm={() => {
+          if (deactivateTarget) void handleDeactivate(deactivateTarget);
+        }}
+        onCancel={() => setDeactivateTarget(null)}
+      />
     </section>
   );
 };

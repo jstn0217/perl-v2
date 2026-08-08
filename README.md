@@ -44,7 +44,7 @@ docker compose up --build
 
 It uses the single root [Dockerfile](/Users/jmendoza/Desktop/Documents/Work_Code/sandbox/perl-v2/Dockerfile) and starts both `perl-api` and `perl-rfid-frontend` inside one container for easier local tracking.
 
-For the current shipped mock-first flow, leave `DATA_LAYER=mock`. Phase 6 API persistence is now wired for MySQL as well, so `DATA_LAYER=db` is runnable end to end for the backend and uses the same seeded schools, users, and devices as the mock layer.
+For the current shipped mock-first flow, leave `DATA_LAYER=mock`. Phase 6 API persistence is now wired for PostgreSQL as well, so `DATA_LAYER=db` is runnable end to end for the backend and uses the same seeded schools, users, and devices as the mock layer.
 
 Root runtime environment defaults:
 
@@ -56,26 +56,25 @@ INITIAL_SYSTEM_ADMIN_EMAIL=system@perl.system
 INITIAL_SYSTEM_ADMIN_PASSWORD=SystemAdmin123!
 INITIAL_SUPPORT_EMAIL=support@perl.system
 INITIAL_SUPPORT_PASSWORD=Support123!
-DB_HOST=mysql
-DB_PORT=3306
+DB_HOST=postgres
+DB_PORT=5432
 DB_USER=perl
 DB_PASSWORD=perl_dev_password
 DB_NAME=perl
 DB_SSL=false
-MYSQL_ROOT_PASSWORD=root_dev_password
-WAIT_FOR_MYSQL=auto
+WAIT_FOR_DB=auto
 ```
 
-`WAIT_FOR_MYSQL=auto` means the root startup script only waits for MySQL when `DATA_LAYER=db`. You can also force the wait with `WAIT_FOR_MYSQL=true`.
+`WAIT_FOR_DB=auto` means the root startup script only waits for the database when `DATA_LAYER=db`. You can also force the wait with `WAIT_FOR_DB=true`.
 
-To run the root stack against MySQL:
+To run the root stack against PostgreSQL:
 
 ```bash
 DATA_LAYER=db docker compose up --build
 ```
 
 The compose stack will:
-- start `mysql`
+- start `postgres`
 - wait for the database port to become reachable
 - initialize the schema and seed the sample schools if the database is empty
 - start the single `perl-app` container from the root Dockerfile
@@ -246,11 +245,11 @@ The current implementation covers Phases 0 through 7:
 
 Phase 6 persistence is implemented:
 
-- MySQL-backed repository implementations under `perl-api/src/repositories/db/`
+- PostgreSQL-backed repository implementations under `perl-api/src/repositories/db/`
 - startup schema initialization plus seed-on-empty behavior for `DATA_LAYER=db`
 - a reusable database seed/reset script in `perl-api`
 - the same API behavior tests runnable against either `mock` or `db` via `TEST_DATA_LAYERS`
 
-Phase 7 controls cover CORS, JWT expiry, every authenticated route family, login/scan rate limiting, and mock/MySQL parity. The dependency-audit gate is currently open because the published React Router line reports a HIGH advisory and the API development tree reports HIGH advisories through Jest transitive dependencies; production API dependencies audit clean.
+Phase 7 controls cover CORS, JWT expiry, every authenticated route family, login/scan rate limiting, and mock/PostgreSQL parity. The dependency-audit gate is currently open because the published React Router line reports a HIGH advisory and the API development tree reports HIGH advisories through Jest transitive dependencies; production API dependencies audit clean.
 
 Phase 8 remains in progress. Individual and school data operations, audit trails, backup/restore behavior, compliance templates, and the incident runbook exist. School-specific approvals, named incident owners, the tabletop exercise, retention/hosting decisions, and production backup verification remain required before real student data is approved. See [planning/PLAN.md](planning/PLAN.md#remaining-launch-gates).

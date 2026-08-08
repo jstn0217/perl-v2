@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { RepositorySet } from '../repositories/index.js';
 import { createAuthController } from '../controllers/authController.js';
 import { AuthService } from '../services/AuthService.js';
-import { attachSessionUser } from '../middleware/authMiddleware.js';
+import { attachSessionUser, requireAuth } from '../middleware/authMiddleware.js';
 import { createRateLimiter, resolveLoginRateLimitKey } from '../middleware/rateLimitMiddleware.js';
 import { env } from '../config/env.js';
 
@@ -23,6 +23,7 @@ export const createAuthRoutes = (repositories: RepositorySet) => {
   router.post('/auth/login', loginRateLimiter, controller.login);
   router.post('/auth/logout', controller.logout);
   router.get('/auth/session', attachSessionUser(authService), controller.getSession);
+  router.patch('/auth/profile', requireAuth(authService), controller.updateProfile);
 
   return router;
 };

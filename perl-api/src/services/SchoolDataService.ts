@@ -233,7 +233,12 @@ export class SchoolDataService {
       name: snapshot.school.name,
       logoUrl: snapshot.school.logoUrl,
       contactEmail: snapshot.school.contactEmail,
-      theme: snapshot.school.theme
+      theme: snapshot.school.theme,
+      address: snapshot.school.address,
+      phone: snapshot.school.phone,
+      timezone: snapshot.school.timezone,
+      academicYearLabel: snapshot.school.academicYearLabel,
+      depedSchoolId: snapshot.school.depedSchoolId
     });
 
     if (!school) {

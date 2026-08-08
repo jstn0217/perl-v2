@@ -12,8 +12,13 @@ interface SchoolRow {
   secondary_color: string;
   accent_color: string;
   contact_email: string;
-  sms_enabled: number;
+  sms_enabled: boolean;
   sms_sender_name: string | null;
+  address: string | null;
+  phone: string | null;
+  timezone: string;
+  academic_year_label: string | null;
+  deped_school_id: string | null;
 }
 
 interface UserRow {
@@ -30,7 +35,7 @@ interface UserRow {
   image_url: string | null;
   phone_number: string | null;
   linked_student_ids: string | null;
-  is_active: number;
+  is_active: boolean;
 }
 
 interface DeviceRow {
@@ -40,7 +45,7 @@ interface DeviceRow {
   location: string;
   key_hash: string;
   key_last_four: string;
-  is_active: number;
+  is_active: boolean;
 }
 
 interface AttendanceLogRow {
@@ -52,20 +57,8 @@ interface AttendanceLogRow {
   verdict: AttendanceLogRecord['verdict'];
   denial_reason: AttendanceLogRecord['denialReason'];
   message: string;
-  scanned_at: Date | string;
+  scanned_at: Date;
 }
-
-const toIsoString = (value: Date | string) => {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-
-  if (value.includes('T')) {
-    return new Date(value.endsWith('Z') ? value : `${value}Z`).toISOString();
-  }
-
-  return new Date(`${value.replace(' ', 'T')}Z`).toISOString();
-};
 
 export const mapSchoolRow = (row: SchoolRow): SchoolProfile => ({
   id: row.id,
@@ -78,8 +71,13 @@ export const mapSchoolRow = (row: SchoolRow): SchoolProfile => ({
     accentColor: row.accent_color
   },
   contactEmail: row.contact_email,
-  smsEnabled: Boolean(row.sms_enabled),
-  smsSenderName: row.sms_sender_name
+  smsEnabled: row.sms_enabled,
+  smsSenderName: row.sms_sender_name,
+  address: row.address,
+  phone: row.phone,
+  timezone: row.timezone,
+  academicYearLabel: row.academic_year_label,
+  depedSchoolId: row.deped_school_id
 });
 
 export const mapUserRow = (row: UserRow): UserRecord => ({
@@ -103,7 +101,7 @@ export const mapUserRow = (row: UserRow): UserRecord => ({
       return [];
     }
   })(),
-  isActive: Boolean(row.is_active)
+  isActive: row.is_active
 });
 
 export const mapDeviceRow = (row: DeviceRow): DeviceRecord => ({
@@ -113,7 +111,7 @@ export const mapDeviceRow = (row: DeviceRow): DeviceRecord => ({
   location: row.location,
   keyHash: row.key_hash,
   keyLastFour: row.key_last_four,
-  isActive: Boolean(row.is_active)
+  isActive: row.is_active
 });
 
 export const mapAttendanceRow = (row: AttendanceLogRow): AttendanceLogRecord => ({
@@ -125,7 +123,7 @@ export const mapAttendanceRow = (row: AttendanceLogRow): AttendanceLogRecord => 
   verdict: row.verdict,
   denialReason: row.denial_reason,
   message: row.message,
-  scannedAt: toIsoString(row.scanned_at)
+  scannedAt: row.scanned_at.toISOString()
 });
 
 export type { AttendanceLogRow, DeviceRow, SchoolRow, UserRow };

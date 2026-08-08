@@ -131,6 +131,33 @@ export const login = async (payload: LoginPayload): Promise<AuthPayload> => {
   return (await response.json()) as AuthPayload;
 };
 
+export interface UpdateProfilePayload {
+  firstName?: string;
+  lastName?: string;
+  currentPassword?: string;
+  newPassword?: string;
+}
+
+export const updateProfile = async (payload: UpdateProfilePayload): Promise<SessionUser> => {
+  const url = new URL('/api/auth/profile', apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to update your profile'));
+  }
+
+  const result = (await response.json()) as { user: SessionUser };
+
+  return result.user;
+};
+
 export const logout = async (): Promise<void> => {
   const url = new URL('/api/auth/logout', apiBaseUrl);
   const response = await fetch(url, {
@@ -200,6 +227,18 @@ export const scanCard = async (payload: ScanCardPayload): Promise<AttendanceScan
   return maybeResult as AttendanceScanResult;
 };
 
+/**
+ * Live attendance stream. Reconnect: relies on the browser's native EventSource
+ * retry (automatic reconnect with the server's `retry:` hint, ~3s default) rather
+ * than app-level backoff logic; `onError` flips the UI to an "offline" indicator
+ * until the browser reconnects and `onOpen` fires again (see AttendanceMonitorPage).
+ * Ordering/bounded history: the consumer (AttendanceMonitorPage.mergeEvents) dedupes
+ * by log id and caps the in-memory event list at 12 entries, and the recent-records
+ * preview at 5, so a long-running monitor tab cannot leak memory. There is no
+ * server-side sequence number, so out-of-order delivery during a reconnect could
+ * theoretically reorder events; this hasn't been a problem at current scan volume
+ * and isn't addressed here (see SCALABLE-FRONTEND-TODO.md P1 for the tracked item).
+ */
 export const createAttendanceStream = (
   schoolSlug: string,
   handlers: {
@@ -275,11 +314,41 @@ export const uploadAdminSchoolLogo = async (schoolId: string, image: File): Prom
   return result.school;
 };
 
-export const fetchAdminUsers = async (schoolId: string): Promise<ManagedUser[]> => {
-  const url = new URL(`/api/admin/schools/${schoolId}/users`, apiBaseUrl);
-  const payload = await fetchJson<{ users: ManagedUser[] }>(url);
+export interface ManagedUsersQuery {
+  page: number;
+  pageSize: number;
+  search?: string;
+  sort?: string;
+  dir?: 'asc' | 'desc';
+  role?: UserRole;
+  status?: 'active' | 'inactive';
+}
 
-  return payload.users;
+export interface ManagedUsersPage {
+  users: ManagedUser[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+const setQueryParam = (url: URL, key: string, value: string | undefined) => {
+  if (value) url.searchParams.set(key, value);
+};
+
+export const fetchAdminUsers = async (
+  schoolId: string,
+  query: ManagedUsersQuery
+): Promise<ManagedUsersPage> => {
+  const url = new URL(`/api/admin/schools/${schoolId}/users`, apiBaseUrl);
+  url.searchParams.set('page', String(query.page));
+  url.searchParams.set('pageSize', String(query.pageSize));
+  setQueryParam(url, 'search', query.search);
+  setQueryParam(url, 'sort', query.sort);
+  setQueryParam(url, 'dir', query.dir);
+  setQueryParam(url, 'role', query.role);
+  setQueryParam(url, 'status', query.status);
+
+  return fetchJson<ManagedUsersPage>(url);
 };
 
 export const createAdminUser = async (
@@ -322,11 +391,35 @@ export const importAdminUsers = async (
   return (await response.json()) as ManagedUserImportResult;
 };
 
-export const fetchAdminDevices = async (schoolId: string): Promise<ManagedDevice[]> => {
-  const url = new URL(`/api/admin/schools/${schoolId}/devices`, apiBaseUrl);
-  const payload = await fetchJson<{ devices: ManagedDevice[] }>(url);
+export interface ManagedDevicesQuery {
+  page: number;
+  pageSize: number;
+  search?: string;
+  sort?: string;
+  dir?: 'asc' | 'desc';
+  status?: 'active' | 'inactive';
+}
 
-  return payload.devices;
+export interface ManagedDevicesPage {
+  devices: ManagedDevice[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export const fetchAdminDevices = async (
+  schoolId: string,
+  query: ManagedDevicesQuery
+): Promise<ManagedDevicesPage> => {
+  const url = new URL(`/api/admin/schools/${schoolId}/devices`, apiBaseUrl);
+  url.searchParams.set('page', String(query.page));
+  url.searchParams.set('pageSize', String(query.pageSize));
+  setQueryParam(url, 'search', query.search);
+  setQueryParam(url, 'sort', query.sort);
+  setQueryParam(url, 'dir', query.dir);
+  setQueryParam(url, 'status', query.status);
+
+  return fetchJson<ManagedDevicesPage>(url);
 };
 
 export const createAdminDevice = async (

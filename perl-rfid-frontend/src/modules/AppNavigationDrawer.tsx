@@ -1,12 +1,8 @@
+import { Fragment } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Modal } from '../components/Modal';
+import { appRoutes } from '../routes';
 import type { UserRole } from '../types/admin';
-import {
-  canViewSchoolWorkspace,
-  canViewLiveMonitor,
-  isPlatformUser,
-  isSupportAgent
-} from '../lib/permissions';
 
 interface AppNavigationDrawerProps {
   role: UserRole;
@@ -20,51 +16,49 @@ export const AppNavigationDrawer = ({
   onClose,
   onSignOut,
   open
-}: AppNavigationDrawerProps) => (
-  <Modal
-    open={open}
-    onClose={onClose}
-    title="Navigation"
-    description="Attendance operations and school administration."
-    variant="drawer"
-  >
-    <nav className="app-drawer-nav" aria-label="Primary">
-      <p className="app-drawer-nav__label">Attendance</p>
-      <NavLink to="/dashboard" onClick={onClose}>Overview</NavLink>
-      {canViewLiveMonitor(role) ? (
-        <NavLink to="/monitor" onClick={onClose}>Live monitor</NavLink>
-      ) : null}
-      <NavLink to="/logs" onClick={onClose}>Attendance records</NavLink>
+}: AppNavigationDrawerProps) => {
+  const navRoutes = appRoutes.filter((route) => route.nav && (!route.guard || route.guard(role)));
+  const groups: { label: string; routes: typeof navRoutes }[] = [];
 
-      {canViewSchoolWorkspace(role) ? (
-        <>
-          <p className="app-drawer-nav__label">
-            {isSupportAgent(role) ? 'School records' : 'School management'}
-          </p>
-          <NavLink to="/admin/users" onClick={onClose}>People</NavLink>
-          <NavLink to="/admin/devices" onClick={onClose}>Devices</NavLink>
-          <NavLink to="/admin/profile" onClick={onClose}>School profile</NavLink>
-          <NavLink to="/admin/notifications" onClick={onClose}>SMS delivery</NavLink>
-          <NavLink to="/audit" onClick={onClose}>
-            {isPlatformUser(role) ? 'System action log' : 'School action log'}
-          </NavLink>
-        </>
-      ) : null}
+  navRoutes.forEach((route) => {
+    const groupLabel = typeof route.nav!.group === 'function' ? route.nav!.group(role) : route.nav!.group;
+    const existingGroup = groups.find((group) => group.label === groupLabel);
 
-      {isPlatformUser(role) ? (
-        <>
-          <p className="app-drawer-nav__label">Platform support</p>
-          <NavLink to="/support/schools" onClick={onClose}>School accounts</NavLink>
-        </>
-      ) : null}
-    </nav>
+    if (existingGroup) {
+      existingGroup.routes.push(route);
+    } else {
+      groups.push({ label: groupLabel, routes: [route] });
+    }
+  });
 
-    <button
-      className="secondary-button secondary-button--danger app-drawer-signout"
-      type="button"
-      onClick={onSignOut}
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Navigation"
+      description="Attendance operations and school administration."
+      variant="drawer"
     >
-      Sign out
-    </button>
-  </Modal>
-);
+      <nav className="app-drawer-nav" aria-label="Primary">
+        {groups.map((group) => (
+          <Fragment key={group.label}>
+            <p className="app-drawer-nav__label">{group.label}</p>
+            {group.routes.map((route) => (
+              <NavLink key={route.path} to={`/${route.path}`} onClick={onClose}>
+                {typeof route.nav!.label === 'function' ? route.nav!.label(role) : route.nav!.label}
+              </NavLink>
+            ))}
+          </Fragment>
+        ))}
+      </nav>
+
+      <button
+        className="secondary-button secondary-button--danger app-drawer-signout"
+        type="button"
+        onClick={onSignOut}
+      >
+        Sign out
+      </button>
+    </Modal>
+  );
+};

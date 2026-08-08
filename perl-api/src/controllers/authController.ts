@@ -67,6 +67,32 @@ export const createAuthController = (repositories: RepositorySet) => {
         ? await tenantService.getSchoolById(req.currentUser.schoolId)
         : null;
       return res.json({ authenticated: true, user: req.currentUser, school });
+    },
+
+    async updateProfile(req: Request, res: Response) {
+      const currentUser = req.currentUser as NonNullable<Request['currentUser']>;
+      const { firstName, lastName, currentPassword, newPassword } = req.body as {
+        firstName?: string;
+        lastName?: string;
+        currentPassword?: string;
+        newPassword?: string;
+      };
+
+      try {
+        const user = await authService.updateProfile(currentUser, {
+          firstName,
+          lastName,
+          currentPassword,
+          newPassword
+        });
+
+        return res.json({ user });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to update profile.';
+        const status = message === 'Current password is incorrect.' ? 401 : 400;
+
+        return res.status(status).json({ message });
+      }
     }
   };
 };

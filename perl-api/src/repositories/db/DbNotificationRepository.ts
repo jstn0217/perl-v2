@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import type { INotificationRepository } from '../interfaces/INotificationRepository.js';
 import type { NotificationTransaction } from '../../types/Notification.js';
 import { getDbPool } from './pool.js';
 
-interface NotificationRow extends RowDataPacket {
+interface NotificationRow {
   id: string;
   school_id: string;
   attendance_log_id: string;
@@ -19,15 +18,9 @@ interface NotificationRow extends RowDataPacket {
   provider_status: string | null;
   network: string | null;
   error_message: string | null;
-  created_at: Date | string;
-  completed_at: Date | string | null;
+  created_at: Date;
+  completed_at: Date | null;
 }
-
-const toIsoString = (value: Date | string | null) => {
-  if (value === null) return null;
-  if (value instanceof Date) return value.toISOString();
-  return new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`).toISOString();
-};
 
 const mapNotification = (row: NotificationRow): NotificationTransaction => ({
   id: row.id,
@@ -44,8 +37,8 @@ const mapNotification = (row: NotificationRow): NotificationTransaction => ({
   providerStatus: row.provider_status,
   network: row.network,
   errorMessage: row.error_message,
-  createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
-  completedAt: toIsoString(row.completed_at)
+  createdAt: row.created_at.toISOString(),
+  completedAt: row.completed_at ? row.completed_at.toISOString() : null
 });
 
 const selectColumns = `
@@ -64,7 +57,7 @@ export class DbNotificationRepository implements INotificationRepository {
         id, school_id, attendance_log_id, student_user_id, guardian_user_id, recipient,
         direction, message, provider, status, provider_message_id, provider_status,
         network, error_message, created_at, completed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         id,
         transaction.schoolId,
@@ -80,8 +73,8 @@ export class DbNotificationRepository implements INotificationRepository {
         transaction.providerStatus,
         transaction.network,
         transaction.errorMessage,
-        transaction.createdAt.replace('T', ' ').replace('Z', ''),
-        transaction.completedAt?.replace('T', ' ').replace('Z', '') ?? null
+        transaction.createdAt,
+        transaction.completedAt ?? null
       ]
     );
     return { ...transaction, id };
@@ -96,16 +89,16 @@ export class DbNotificationRepository implements INotificationRepository {
     const next = { ...existing, ...changes };
     await getDbPool().query(
       `UPDATE notification_transactions
-       SET status = ?, provider_message_id = ?, provider_status = ?, network = ?,
-           error_message = ?, completed_at = ?
-       WHERE id = ?`,
+       SET status = $1, provider_message_id = $2, provider_status = $3, network = $4,
+           error_message = $5, completed_at = $6
+       WHERE id = $7`,
       [
         next.status,
         next.providerMessageId,
         next.providerStatus,
         next.network,
         next.errorMessage,
-        next.completedAt?.replace('T', ' ').replace('Z', '') ?? null,
+        next.completedAt ?? null,
         transactionId
       ]
     );
@@ -113,10 +106,10 @@ export class DbNotificationRepository implements INotificationRepository {
   }
 
   async listAllBySchool(schoolId: string): Promise<NotificationTransaction[]> {
-    const [rows] = await getDbPool().query<NotificationRow[]>(
+    const { rows } = await getDbPool().query<NotificationRow>(
       `SELECT ${selectColumns}
        FROM notification_transactions
-       WHERE school_id = ?
+       WHERE school_id = $1
        ORDER BY created_at DESC, id DESC`,
       [schoolId]
     );
@@ -124,27 +117,27 @@ export class DbNotificationRepository implements INotificationRepository {
   }
 
   async deleteBySchool(schoolId: string): Promise<number> {
-    const [result] = await getDbPool().query<ResultSetHeader>(
-      'DELETE FROM notification_transactions WHERE school_id = ?',
+    const result = await getDbPool().query(
+      'DELETE FROM notification_transactions WHERE school_id = $1',
       [schoolId]
     );
-    return result.affectedRows ?? 0;
+    return result.rowCount ?? 0;
   }
 
   async deleteByUser(schoolId: string, userId: string): Promise<number> {
-    const [result] = await getDbPool().query<ResultSetHeader>(
+    const result = await getDbPool().query(
       `DELETE FROM notification_transactions
-       WHERE school_id = ? AND (student_user_id = ? OR guardian_user_id = ?)`,
-      [schoolId, userId, userId]
+       WHERE school_id = $1 AND (student_user_id = $2 OR guardian_user_id = $2)`,
+      [schoolId, userId]
     );
-    return result.affectedRows ?? 0;
+    return result.rowCount ?? 0;
   }
 
   private async findById(transactionId: string): Promise<NotificationTransaction | null> {
-    const [rows] = await getDbPool().query<NotificationRow[]>(
+    const { rows } = await getDbPool().query<NotificationRow>(
       `SELECT ${selectColumns}
        FROM notification_transactions
-       WHERE id = ?
+       WHERE id = $1
        LIMIT 1`,
       [transactionId]
     );

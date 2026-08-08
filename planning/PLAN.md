@@ -9,7 +9,7 @@ It is intentionally evidence-based. `CLAUDE.md` remains authoritative for phase 
 ## Current Repo State
 
 - The rebuilt applications now live at `perl-api/` and `perl-rfid-frontend/`; the legacy implementation under `existing/` remains reference material only.
-- Mock mode remains the development default, while the Phase 6 MySQL repository implementations are selectable through `DATA_LAYER=db`.
+- Mock mode remains the development default, while the Phase 6 PostgreSQL repository implementations are selectable through `DATA_LAYER=db`.
 - The current worktree contains implementation work spanning Phases 0–8. This does not make every phase release-complete: acceptance still requires proportionate verification, an intentional commit, and the unresolved Phase 8 organizational approvals below.
 - `planning/CHANGELOG.md` records both code and planning changes under `[Unreleased]`.
 
@@ -23,7 +23,7 @@ It is intentionally evidence-based. `CLAUDE.md` remains authoritative for phase 
 | 3 — Attendance | Device scan API, centralized admit/deny rules, school-scoped SSE monitor, and paginated logs exist. | Implemented |
 | 4 — School admin | Profile, logo/theme, and school-scoped user-management API/UI flows exist. | Implemented |
 | 5 — Devices | Device registration, one-time keys, scoped scan authorization, rotation/revocation, and simulator script exist. | Implemented |
-| 6 — Persistence | MySQL schema, DB repositories, seed/reset flow, Docker wiring, and shared mock/DB API behavior harness exist. | Implemented; DB verification requires available MySQL |
+| 6 — Persistence | PostgreSQL schema, DB repositories, seed/reset flow, Docker wiring, and shared mock/DB API behavior harness exist. | Implemented; DB verification requires available PostgreSQL |
 | 7 — Hardening | Explicit CORS, session expiry checks, route-family isolation coverage, rate limits, and dependency-audit command exist. | Controls implemented; audit gate open |
 | 8 — Compliance & ops | DPIA, DPA template, incident runbook, data export/erasure, backup/restore, and audit operations exist. | In progress; pre-launch approvals and operational exercises remain |
 
@@ -46,7 +46,7 @@ These are required before real student data is approved:
 - complete and obtain counsel/DPO review of the DPA, then execute it with the pilot school;
 - name incident contacts, verify DBNMS access, approve the runbook, and record a tabletop exercise;
 - test encrypted backup storage and a school-scoped restore in the intended production environment;
-- run the API/frontend lint and build gates, API tests against mock and MySQL, and HIGH/CRITICAL dependency audits;
+- run the API/frontend lint and build gates, API tests against mock and PostgreSQL, and HIGH/CRITICAL dependency audits;
 - resolve or upstream-clear the current HIGH advisories: React Router has no audit-clean published version in the checked range, while the API's remaining findings are confined to Jest's development-only transitive dependency tree; production API dependencies currently audit clean;
 - perform final responsive, keyboard, and contrast review with representative school themes and real-length content.
 
@@ -402,7 +402,7 @@ Both should share validation and mapping utilities where practical, but they are
 
 ### Phase 6
 
-Add real database persistence only after the mock behavior is stable. For local development, this is where Docker becomes a first-class requirement. The rebuild should target MySQL to stay aligned with `CLAUDE.md`, and the legacy data import path should be designed before the first production-like seed is loaded.
+Add real database persistence only after the mock behavior is stable. For local development, this is where Docker becomes a first-class requirement. The rebuild should target PostgreSQL to stay aligned with `CLAUDE.md`, and the legacy data import path should be designed before the first production-like seed is loaded.
 
 ## Proposed Local Docker Strategy
 
@@ -415,11 +415,11 @@ To stay aligned with `CLAUDE.md`, Docker should be introduced in two stages:
    Add a root-level `docker-compose.yml` for:
    - `perl-api`
    - `perl-rfid-frontend`
-   - `mysql`
+   - `postgres`
 
 Recommendation:
 
-- Use MySQL for the rebuilt real persistence phase.
+- Use PostgreSQL for the rebuilt real persistence phase.
 - Treat the legacy compose/template setup as reference only, not as the new baseline.
 - Keep websocket behavior inside the API process initially unless actual load proves otherwise.
 
@@ -440,7 +440,7 @@ Use an explicit ETL-style import pipeline rather than trying to point the new ap
 
 1. Extract legacy data from the old database into staging exports or direct read-only queries.
 2. Transform the legacy records into the new canonical shapes in code.
-3. Load the transformed records into the new MySQL schema through dedicated import scripts.
+3. Load the transformed records into the new PostgreSQL schema through dedicated import scripts.
 4. Run validation reports after import to compare record counts, per-school totals, and key relationship integrity.
 
 This is safer than dual-writing or incremental table reuse because the old schema and the rebuilt service boundaries are intentionally different.
@@ -452,7 +452,7 @@ This is safer than dual-writing or incremental table reuse because the old schem
 - `src/migration/transforms/`
   Pure mapping functions from legacy records to new entities.
 - `src/migration/load/`
-  MySQL upsert/import routines for the new schema.
+  PostgreSQL upsert/import routines for the new schema.
 - `src/migration/reports/`
   Verification scripts for counts, missing relationships, and rejected rows.
 
@@ -488,7 +488,7 @@ When the rebuild reaches real persistence:
 
 ### Planning implication
 
-`CLAUDE.md` is the source of truth and already names MySQL in Phase 6. Planning artifacts should stay aligned with that choice until an explicit roadmap change is made there first.
+`CLAUDE.md` is the source of truth and already names PostgreSQL in Phase 6. Planning artifacts should stay aligned with that choice until an explicit roadmap change is made there first.
 
 ## Recommended Deliverables Before Development Starts
 
@@ -534,7 +534,7 @@ Pagination should be treated as a baseline contract, not a later optimization. N
 Stabilize the current implementation instead of starting another feature phase:
 
 1. verify the UI refinement and existing feature paths without adding speculative frontend tests;
-2. run the mock-mode quality gates, then the MySQL parity suite when the database is available;
+2. run the mock-mode quality gates, then the PostgreSQL parity suite when the database is available;
 3. keep Phase 8 marked in progress until the school-specific approvals, named owners, and operational exercises are complete;
 4. continue Phase 9 platform administration only within the product-owner-approved school provisioning, role-scoped access, and audited support workflow; billing and Redis realtime remain deferred until their separate triggers in `CLAUDE.md`.
 
@@ -739,7 +739,7 @@ Add the first root-level production-like local stack:
 - `docker-compose.yml`
 - `perl-api` service
 - `perl-rfid-frontend` service
-- `mysql` service
+- `postgres` service
 
 ## Explicit Non-Goals For Phase 0
 

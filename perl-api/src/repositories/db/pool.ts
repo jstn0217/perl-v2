@@ -1,24 +1,20 @@
-import mysql from 'mysql2/promise';
-import type { Pool } from 'mysql2/promise';
+import pg from 'pg';
 import { env } from '../../config/env.js';
 
-let pool: Pool | null = null;
+let pool: pg.Pool | null = null;
 
 const createPool = () =>
-  mysql.createPool({
+  new pg.Pool({
     host: env.db.host,
     port: env.db.port,
     user: env.db.user,
     password: env.db.password,
     database: env.db.name,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-    timezone: 'Z',
+    max: 10,
     ssl: env.db.ssl ? { rejectUnauthorized: true } : undefined
   });
 
-export const getDbPool = (): Pool => {
+export const getDbPool = (): pg.Pool => {
   pool ??= createPool();
 
   return pool;

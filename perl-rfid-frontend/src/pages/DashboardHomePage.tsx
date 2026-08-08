@@ -34,6 +34,12 @@ export const DashboardHomePage = () => {
                   ? `Review attendance for the students linked to your ${school.name} account.`
                   : `Keep arrivals moving and attendance records clear for ${school.name}.`}
           </p>
+          {canViewWorkspace && (school.academicYearLabel || school.address) ? (
+            <div className="overview-hero__meta">
+              {school.academicYearLabel ? <span>{school.academicYearLabel}</span> : null}
+              {school.address ? <span>{school.address}</span> : null}
+            </div>
+          ) : null}
         </div>
         <Link className="primary-button primary-button--link" to={canMonitor ? '/monitor' : '/logs'}>
           {canMonitor ? 'Open live monitor' : 'View attendance'} <span aria-hidden="true">→</span>

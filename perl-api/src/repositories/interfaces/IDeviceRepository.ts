@@ -1,10 +1,16 @@
+import type { PagedResult, PageQuery } from '../../types/Pagination.js';
 import type { DeviceRecord } from '../../types/Device.js';
+
+export interface DeviceListQuery extends PageQuery {
+  status?: 'active' | 'inactive';
+}
 
 export interface IDeviceRepository {
   findDefaultBySchoolId(schoolId: string): Promise<DeviceRecord | null>;
   findById(deviceId: string): Promise<DeviceRecord | null>;
   findByKeyHash(keyHash: string): Promise<DeviceRecord | null>;
   listBySchool(schoolId: string): Promise<DeviceRecord[]>;
+  listBySchoolPaged(schoolId: string, query: DeviceListQuery): Promise<PagedResult<DeviceRecord>>;
   create(device: DeviceRecord): Promise<DeviceRecord>;
   update(
     deviceId: string,

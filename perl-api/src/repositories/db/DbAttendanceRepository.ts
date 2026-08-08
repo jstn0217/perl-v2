@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import type { AttendanceLogRecord, AttendanceLogRecordPage } from '../../types/Attendance.js';
 import type { IAttendanceRepository } from '../interfaces/IAttendanceRepository.js';
 import { mapAttendanceRow, type AttendanceLogRow } from './mappers.js';
@@ -12,7 +11,7 @@ export class DbAttendanceRepository implements IAttendanceRepository {
     await getDbPool().query(
       `INSERT INTO attendance_logs (
         id, school_id, user_id, device_id, direction, verdict, denial_reason, message, scanned_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         id,
         log.schoolId,
@@ -22,7 +21,7 @@ export class DbAttendanceRepository implements IAttendanceRepository {
         log.verdict,
         log.denialReason,
         log.message,
-        log.scannedAt.replace('T', ' ').replace('Z', '')
+        log.scannedAt
       ]
     );
 
@@ -33,10 +32,10 @@ export class DbAttendanceRepository implements IAttendanceRepository {
   }
 
   async findByUserAndDate(userId: string, date: string): Promise<AttendanceLogRecord[]> {
-    const [rows] = await getDbPool().query<(AttendanceLogRow & RowDataPacket)[]>(
+    const { rows } = await getDbPool().query<AttendanceLogRow>(
       `SELECT id, school_id, user_id, device_id, direction, verdict, denial_reason, message, scanned_at
        FROM attendance_logs
-       WHERE user_id = ? AND DATE(scanned_at) = ?
+       WHERE user_id = $1 AND (scanned_at AT TIME ZONE 'UTC')::date = $2::date
        ORDER BY scanned_at DESC, created_at DESC`,
       [userId, date]
     );
@@ -47,24 +46,24 @@ export class DbAttendanceRepository implements IAttendanceRepository {
   async listBySchool(schoolId: string, page: number, pageSize: number): Promise<AttendanceLogRecordPage> {
     const offset = (page - 1) * pageSize;
     const pool = getDbPool();
-    const [rows] = await pool.query<(AttendanceLogRow & RowDataPacket)[]>(
+    const { rows } = await pool.query<AttendanceLogRow>(
       `SELECT id, school_id, user_id, device_id, direction, verdict, denial_reason, message, scanned_at
        FROM attendance_logs
-       WHERE school_id = ?
+       WHERE school_id = $1
        ORDER BY scanned_at DESC, created_at DESC
-       LIMIT ? OFFSET ?`,
+       LIMIT $2 OFFSET $3`,
       [schoolId, pageSize, offset]
     );
-    const [countRows] = await pool.query<(RowDataPacket & { total: number })[]>(
+    const { rows: countRows } = await pool.query<{ total: string }>(
       `SELECT COUNT(*) AS total
        FROM attendance_logs
-       WHERE school_id = ?`,
+       WHERE school_id = $1`,
       [schoolId]
     );
 
     return {
       records: rows.map(mapAttendanceRow),
-      total: countRows[0]?.total ?? 0,
+      total: Number(countRows[0]?.total ?? 0),
       page,
       pageSize
     };
@@ -81,36 +80,36 @@ export class DbAttendanceRepository implements IAttendanceRepository {
     }
 
     const offset = (page - 1) * pageSize;
-    const placeholders = userIds.map(() => '?').join(', ');
+    const placeholders = userIds.map((_, index) => `$${index + 2}`).join(', ');
     const pool = getDbPool();
-    const [rows] = await pool.query<(AttendanceLogRow & RowDataPacket)[]>(
+    const { rows } = await pool.query<AttendanceLogRow>(
       `SELECT id, school_id, user_id, device_id, direction, verdict, denial_reason, message, scanned_at
        FROM attendance_logs
-       WHERE school_id = ? AND user_id IN (${placeholders})
+       WHERE school_id = $1 AND user_id IN (${placeholders})
        ORDER BY scanned_at DESC, created_at DESC
-       LIMIT ? OFFSET ?`,
+       LIMIT $${userIds.length + 2} OFFSET $${userIds.length + 3}`,
       [schoolId, ...userIds, pageSize, offset]
     );
-    const [countRows] = await pool.query<(RowDataPacket & { total: number })[]>(
+    const { rows: countRows } = await pool.query<{ total: string }>(
       `SELECT COUNT(*) AS total
        FROM attendance_logs
-       WHERE school_id = ? AND user_id IN (${placeholders})`,
+       WHERE school_id = $1 AND user_id IN (${placeholders})`,
       [schoolId, ...userIds]
     );
 
     return {
       records: rows.map(mapAttendanceRow),
-      total: countRows[0]?.total ?? 0,
+      total: Number(countRows[0]?.total ?? 0),
       page,
       pageSize
     };
   }
 
   async listAllBySchool(schoolId: string): Promise<AttendanceLogRecord[]> {
-    const [rows] = await getDbPool().query<(AttendanceLogRow & RowDataPacket)[]>(
+    const { rows } = await getDbPool().query<AttendanceLogRow>(
       `SELECT id, school_id, user_id, device_id, direction, verdict, denial_reason, message, scanned_at
        FROM attendance_logs
-       WHERE school_id = ?
+       WHERE school_id = $1
        ORDER BY scanned_at ASC, created_at ASC, id ASC`,
       [schoolId]
     );
@@ -121,7 +120,7 @@ export class DbAttendanceRepository implements IAttendanceRepository {
     await getDbPool().query(
       `INSERT INTO attendance_logs (
         id, school_id, user_id, device_id, direction, verdict, denial_reason, message, scanned_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         log.id,
         log.schoolId,
@@ -131,25 +130,25 @@ export class DbAttendanceRepository implements IAttendanceRepository {
         log.verdict,
         log.denialReason,
         log.message,
-        log.scannedAt.replace('T', ' ').replace('Z', '')
+        log.scannedAt
       ]
     );
     return log;
   }
 
   async deleteByUser(schoolId: string, userId: string): Promise<number> {
-    const [result] = await getDbPool().query<ResultSetHeader>(
-      'DELETE FROM attendance_logs WHERE school_id = ? AND user_id = ?',
+    const result = await getDbPool().query(
+      'DELETE FROM attendance_logs WHERE school_id = $1 AND user_id = $2',
       [schoolId, userId]
     );
-    return result.affectedRows ?? 0;
+    return result.rowCount ?? 0;
   }
 
   async deleteBySchool(schoolId: string): Promise<number> {
-    const [result] = await getDbPool().query<ResultSetHeader>(
-      'DELETE FROM attendance_logs WHERE school_id = ?',
+    const result = await getDbPool().query(
+      'DELETE FROM attendance_logs WHERE school_id = $1',
       [schoolId]
     );
-    return result.affectedRows ?? 0;
+    return result.rowCount ?? 0;
   }
 }

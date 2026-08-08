@@ -1,4 +1,4 @@
-import type { RowDataPacket } from 'mysql2';
+import type { PoolClient } from 'pg';
 import {
   createMockDevices,
   createMockPlatformUsers,
@@ -9,7 +9,10 @@ import { env } from '../../config/env.js';
 import { getDbPool } from './pool.js';
 
 let schemaReady = false;
-const initializationLockName = 'perl_db_bootstrap_lock';
+
+// Postgres advisory locks take a bigint key, not a name. There is only ever one
+// lock used in this codebase (database bootstrap), so a fixed constant is enough.
+const initializationLockKey = 727384950;
 
 const createTables = async () => {
   const pool = getDbPool();
@@ -24,11 +27,16 @@ const createTables = async () => {
       secondary_color CHAR(7) NOT NULL,
       accent_color CHAR(7) NOT NULL,
       contact_email VARCHAR(255) NOT NULL,
-      sms_enabled TINYINT(1) NOT NULL DEFAULT 0,
+      sms_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       sms_sender_name VARCHAR(32) NULL,
+      address TEXT NULL,
+      phone VARCHAR(32) NULL,
+      timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Manila',
+      academic_year_label VARCHAR(64) NULL,
+      deped_school_id VARCHAR(64) NULL,
       sort_order INT NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
   `);
 
   await pool.query(`
@@ -46,11 +54,11 @@ const createTables = async () => {
       image_url TEXT NULL,
       phone_number VARCHAR(32) NULL,
       linked_student_ids TEXT NULL,
-      is_active TINYINT(1) NOT NULL DEFAULT 1,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT fk_users_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE,
       CONSTRAINT uq_users_school_email UNIQUE (school_id, email)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    )
   `);
 
   await pool.query(`
@@ -61,9 +69,9 @@ const createTables = async () => {
       first_name VARCHAR(255) NOT NULL,
       last_name VARCHAR(255) NOT NULL,
       role VARCHAR(20) NOT NULL DEFAULT 'SUPPORT',
-      is_active TINYINT(1) NOT NULL DEFAULT 1,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
   `);
 
   await pool.query(`
@@ -74,10 +82,10 @@ const createTables = async () => {
       location VARCHAR(255) NOT NULL,
       key_hash CHAR(64) NOT NULL UNIQUE,
       key_last_four CHAR(4) NOT NULL,
-      is_active TINYINT(1) NOT NULL DEFAULT 1,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT fk_devices_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    )
   `);
 
   await pool.query(`
@@ -90,13 +98,17 @@ const createTables = async () => {
       verdict VARCHAR(20) NOT NULL,
       denial_reason VARCHAR(64) NULL,
       message TEXT NOT NULL,
-      scanned_at DATETIME(3) NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT fk_attendance_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE,
-      INDEX idx_attendance_school_scanned_at (school_id, scanned_at DESC),
-      INDEX idx_attendance_user_scanned_at (user_id, scanned_at DESC)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      scanned_at TIMESTAMPTZ(3) NOT NULL,
+      created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT fk_attendance_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE
+    )
   `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_attendance_school_scanned_at ON attendance_logs (school_id, scanned_at DESC)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_attendance_user_scanned_at ON attendance_logs (user_id, scanned_at DESC)'
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_logs (
@@ -104,17 +116,19 @@ const createTables = async () => {
       school_id VARCHAR(128) NOT NULL,
       actor_user_id VARCHAR(128) NOT NULL,
       actor_role VARCHAR(20) NOT NULL DEFAULT 'ADMIN',
-      support_initiated TINYINT(1) NOT NULL DEFAULT 0,
+      support_initiated BOOLEAN NOT NULL DEFAULT FALSE,
       action VARCHAR(64) NOT NULL,
       target_type VARCHAR(20) NOT NULL,
       target_id VARCHAR(128) NULL,
       change_summary TEXT NOT NULL,
-      occurred_at DATETIME(3) NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT fk_audit_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE,
-      INDEX idx_audit_school_occurred_at (school_id, occurred_at DESC)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      occurred_at TIMESTAMPTZ(3) NOT NULL,
+      created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT fk_audit_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE
+    )
   `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_audit_school_occurred_at ON audit_logs (school_id, occurred_at DESC)'
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notification_transactions (
@@ -132,36 +146,58 @@ const createTables = async () => {
       provider_status VARCHAR(64) NULL,
       network VARCHAR(64) NULL,
       error_message TEXT NULL,
-      created_at DATETIME(3) NOT NULL,
-      completed_at DATETIME(3) NULL,
-      CONSTRAINT fk_notification_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE,
-      INDEX idx_notification_school_created_at (school_id, created_at DESC),
-      INDEX idx_notification_attendance_log (attendance_log_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      created_at TIMESTAMPTZ(3) NOT NULL,
+      completed_at TIMESTAMPTZ(3) NULL,
+      CONSTRAINT fk_notification_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE
+    )
   `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_notification_school_created_at ON notification_transactions (school_id, created_at DESC)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_notification_attendance_log ON notification_transactions (attendance_log_id)'
+  );
 
   const ensureColumn = async (table: string, column: string, definition: string) => {
-    const [rows] = await pool.query<RowDataPacket[]>(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
+    const { rows } = await pool.query<{ column_name: string }>(
+      'SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = $2',
+      [table, column]
+    );
     if (rows.length === 0) {
-      await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+      await pool.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     }
   };
 
   await ensureColumn('users', 'linked_student_ids', 'TEXT NULL');
   await ensureColumn('users', 'phone_number', 'VARCHAR(32) NULL');
-  await ensureColumn('schools', 'sms_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
+  await ensureColumn('schools', 'sms_enabled', 'BOOLEAN NOT NULL DEFAULT FALSE');
   await ensureColumn('schools', 'sms_sender_name', 'VARCHAR(32) NULL');
+  await ensureColumn('schools', 'address', 'TEXT NULL');
+  await ensureColumn('schools', 'phone', 'VARCHAR(32) NULL');
+  await ensureColumn('schools', 'timezone', "VARCHAR(64) NOT NULL DEFAULT 'Asia/Manila'");
+  await ensureColumn('schools', 'academic_year_label', 'VARCHAR(64) NULL');
+  await ensureColumn('schools', 'deped_school_id', 'VARCHAR(64) NULL');
   await ensureColumn('platform_users', 'role', "VARCHAR(20) NOT NULL DEFAULT 'SUPPORT'");
   await ensureColumn('audit_logs', 'actor_role', "VARCHAR(20) NOT NULL DEFAULT 'ADMIN'");
-  await ensureColumn('audit_logs', 'support_initiated', 'TINYINT(1) NOT NULL DEFAULT 0');
+  await ensureColumn('audit_logs', 'support_initiated', 'BOOLEAN NOT NULL DEFAULT FALSE');
   await ensureColumn('audit_logs', 'change_summary', 'TEXT NULL');
+
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_users_school ON users (school_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_users_school_role ON users (school_id, role)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_users_school_is_active ON users (school_id, is_active)');
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_users_school_name ON users (school_id, last_name, first_name)'
+  );
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school ON devices (school_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school_name ON devices (school_id, name)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school_location ON devices (school_id, location)');
 };
 
 const countSchools = async () => {
   const pool = getDbPool();
-  const [rows] = await pool.query<(RowDataPacket & { total: number })[]>('SELECT COUNT(*) AS total FROM schools');
+  const { rows } = await pool.query<{ total: string }>('SELECT COUNT(*) AS total FROM schools');
 
-  return rows[0]?.total ?? 0;
+  return Number(rows[0]?.total ?? 0);
 };
 
 const seedMissingPlatformUsers = async () => {
@@ -170,9 +206,10 @@ const seedMissingPlatformUsers = async () => {
     env.initialSupport
   )) {
     await getDbPool().query(
-      `INSERT IGNORE INTO platform_users (
+      `INSERT INTO platform_users (
         id, email, password_hash, first_name, last_name, role, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (email) DO NOTHING`,
       [
         platformUser.id,
         platformUser.email,
@@ -180,27 +217,25 @@ const seedMissingPlatformUsers = async () => {
         platformUser.firstName,
         platformUser.lastName,
         platformUser.role,
-        platformUser.isActive ? 1 : 0
+        platformUser.isActive
       ]
     );
   }
 };
 
 const withAdvisoryLock = async <T>(callback: () => Promise<T>) => {
-  const pool = getDbPool();
-  const [lockRows] = await pool.query<(RowDataPacket & { acquired: number | null })[]>(
-    'SELECT GET_LOCK(?, 30) AS acquired',
-    [initializationLockName]
-  );
-
-  if (lockRows[0]?.acquired !== 1) {
-    throw new Error('Unable to acquire database bootstrap lock.');
-  }
+  const client = await getDbPool().connect();
 
   try {
-    return await callback();
+    await client.query('SELECT pg_advisory_lock($1)', [initializationLockKey]);
+
+    try {
+      return await callback();
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [initializationLockKey]);
+    }
   } finally {
-    await pool.query('DO RELEASE_LOCK(?)', [initializationLockName]);
+    client.release();
   }
 };
 
@@ -213,106 +248,122 @@ export const ensureDatabaseReady = async () => {
   schemaReady = true;
 };
 
+const insertSchools = async (client: PoolClient) => {
+  const schools = createMockSchools();
+  for (const [index, school] of schools.entries()) {
+    await client.query(
+      `INSERT INTO schools (
+        id, slug, name, logo_url, primary_color, secondary_color, accent_color,
+        contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
+        academic_year_label, deped_school_id, sort_order
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      [
+        school.id,
+        school.slug,
+        school.name,
+        school.logoUrl,
+        school.theme.primaryColor,
+        school.theme.secondaryColor,
+        school.theme.accentColor,
+        school.contactEmail,
+        school.smsEnabled,
+        school.smsSenderName,
+        school.address,
+        school.phone,
+        school.timezone,
+        school.academicYearLabel,
+        school.depedSchoolId,
+        index + 1
+      ]
+    );
+  }
+};
+
+const insertUsers = async (client: PoolClient) => {
+  for (const user of createMockUsers()) {
+    await client.query(
+      `INSERT INTO users (
+        id, school_id, email, password_hash, first_name, last_name, role, card_uid,
+        grade_level, section, image_url, phone_number, linked_student_ids, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [
+        user.id,
+        user.schoolId,
+        user.email,
+        user.passwordHash,
+        user.firstName,
+        user.lastName,
+        user.role,
+        user.cardUid,
+        user.gradeLevel,
+        user.section,
+        user.imageUrl,
+        user.phoneNumber ?? null,
+        JSON.stringify(user.linkedStudentIds ?? []),
+        user.isActive
+      ]
+    );
+  }
+};
+
+const insertPlatformUsers = async (client: PoolClient) => {
+  for (const platformUser of createMockPlatformUsers(
+    env.initialSystemAdmin,
+    env.initialSupport
+  )) {
+    await client.query(
+      `INSERT INTO platform_users (
+        id, email, password_hash, first_name, last_name, role, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        platformUser.id,
+        platformUser.email,
+        platformUser.passwordHash,
+        platformUser.firstName,
+        platformUser.lastName,
+        platformUser.role,
+        platformUser.isActive
+      ]
+    );
+  }
+};
+
+const insertDevices = async (client: PoolClient) => {
+  for (const device of createMockDevices()) {
+    await client.query(
+      `INSERT INTO devices (
+        id, school_id, name, location, key_hash, key_last_four, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        device.id,
+        device.schoolId,
+        device.name,
+        device.location,
+        device.keyHash,
+        device.keyLastFour,
+        device.isActive
+      ]
+    );
+  }
+};
+
 export const seedDatabase = async () => {
   await ensureDatabaseReady();
 
-  const pool = getDbPool();
-  const connection = await pool.getConnection();
+  const client = await getDbPool().connect();
 
   try {
-    await connection.beginTransaction();
-
-    const schools = createMockSchools();
-    for (const [index, school] of schools.entries()) {
-      await connection.query(
-        `INSERT INTO schools (
-          id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-          contact_email, sms_enabled, sms_sender_name, sort_order
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          school.id,
-          school.slug,
-          school.name,
-          school.logoUrl,
-          school.theme.primaryColor,
-          school.theme.secondaryColor,
-          school.theme.accentColor,
-          school.contactEmail,
-          school.smsEnabled ? 1 : 0,
-          school.smsSenderName,
-          index + 1
-        ]
-      );
-    }
-
-    for (const user of createMockUsers()) {
-      await connection.query(
-        `INSERT INTO users (
-          id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-          grade_level, section, image_url, phone_number, linked_student_ids, is_active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          user.id,
-          user.schoolId,
-          user.email,
-          user.passwordHash,
-          user.firstName,
-          user.lastName,
-          user.role,
-          user.cardUid,
-          user.gradeLevel,
-          user.section,
-          user.imageUrl,
-          user.phoneNumber ?? null,
-          JSON.stringify(user.linkedStudentIds ?? []),
-          user.isActive ? 1 : 0
-        ]
-      );
-    }
-
-    for (const platformUser of createMockPlatformUsers(
-      env.initialSystemAdmin,
-      env.initialSupport
-    )) {
-      await connection.query(
-        `INSERT INTO platform_users (
-          id, email, password_hash, first_name, last_name, role, is_active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          platformUser.id,
-          platformUser.email,
-          platformUser.passwordHash,
-          platformUser.firstName,
-          platformUser.lastName,
-          platformUser.role,
-          platformUser.isActive ? 1 : 0
-        ]
-      );
-    }
-
-    for (const device of createMockDevices()) {
-      await connection.query(
-        `INSERT INTO devices (
-          id, school_id, name, location, key_hash, key_last_four, is_active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          device.id,
-          device.schoolId,
-          device.name,
-          device.location,
-          device.keyHash,
-          device.keyLastFour,
-          device.isActive ? 1 : 0
-        ]
-      );
-    }
-
-    await connection.commit();
+    await client.query('BEGIN');
+    await insertSchools(client);
+    await insertUsers(client);
+    await insertPlatformUsers(client);
+    await insertDevices(client);
+    await client.query('COMMIT');
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     throw error;
   } finally {
-    connection.release();
+    client.release();
   }
 };
 
@@ -330,26 +381,22 @@ export const initializeDatabase = async () => {
 export const resetDatabase = async () => {
   await ensureDatabaseReady();
 
-  const pool = getDbPool();
-  const connection = await pool.getConnection();
+  const client = await getDbPool().connect();
 
   try {
-    await connection.beginTransaction();
-    await connection.query('SET FOREIGN_KEY_CHECKS = 0');
-    await connection.query('TRUNCATE TABLE notification_transactions');
-    await connection.query('TRUNCATE TABLE audit_logs');
-    await connection.query('TRUNCATE TABLE attendance_logs');
-    await connection.query('TRUNCATE TABLE devices');
-    await connection.query('TRUNCATE TABLE users');
-    await connection.query('TRUNCATE TABLE platform_users');
-    await connection.query('TRUNCATE TABLE schools');
-    await connection.query('SET FOREIGN_KEY_CHECKS = 1');
-    await connection.commit();
+    await client.query('BEGIN');
+    // Postgres checks FK constraints against the full statement, not truncation order,
+    // so every table on either side of a foreign key must be truncated together.
+    await client.query(
+      `TRUNCATE TABLE
+        notification_transactions, audit_logs, attendance_logs, devices, users, platform_users, schools`
+    );
+    await client.query('COMMIT');
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     throw error;
   } finally {
-    connection.release();
+    client.release();
   }
 };
 

@@ -25,6 +25,11 @@ export interface SchoolProfileUpdatePayload {
   logoUrl: string | null;
   contactEmail: string;
   theme: SchoolTheme;
+  address: string | null;
+  phone: string | null;
+  timezone: string;
+  academicYearLabel: string | null;
+  depedSchoolId: string | null;
 }
 
 export interface ManagedUserCreatePayload {

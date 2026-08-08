@@ -1,12 +1,12 @@
 #!/bin/sh
 set -eu
 
-HOST="${DB_HOST:-mysql}"
-PORT="${DB_PORT:-3306}"
-TIMEOUT_SECONDS="${MYSQL_WAIT_TIMEOUT_SECONDS:-60}"
+HOST="${DB_HOST:-postgres}"
+PORT="${DB_PORT:-5432}"
+TIMEOUT_SECONDS="${DB_WAIT_TIMEOUT_SECONDS:-60}"
 START_TIME="$(date +%s)"
 
-echo "Waiting for MySQL at ${HOST}:${PORT} ..."
+echo "Waiting for the database at ${HOST}:${PORT} ..."
 
 while true; do
   if node -e "
@@ -17,14 +17,14 @@ while true; do
     socket.on('timeout', () => { socket.destroy(); process.exit(1); });
     socket.on('error', () => process.exit(1));
   "; then
-    echo "MySQL is reachable at ${HOST}:${PORT}."
+    echo "The database is reachable at ${HOST}:${PORT}."
     exit 0
   fi
 
   NOW="$(date +%s)"
   ELAPSED="$((NOW - START_TIME))"
   if [ "$ELAPSED" -ge "$TIMEOUT_SECONDS" ]; then
-    echo "Timed out waiting for MySQL after ${TIMEOUT_SECONDS}s." >&2
+    echo "Timed out waiting for the database after ${TIMEOUT_SECONDS}s." >&2
     exit 1
   fi
 

@@ -33,7 +33,7 @@ v2.0 was directionally right (multi-tenant SaaS, not a single-school deployment)
 | Stripe billing service (`perl-billing`) in Sprint 4 | No paying customer yet exists to bill. Building this before the core product is validated is speculative work — YAGNI. | Billing is a phase near the *end*, gated on "we have a school that wants to pay us." |
 | Redis pub/sub for `perl-ws` from Sprint 0 | Solves a scaling/isolation problem we don't have yet with zero tenants. Adds an infra dependency before there's a feature to scale. | Start with a single in-process event emitter. Introduce Redis only when we actually have concurrent multi-tenant WS load (see [Section 8](#8-deferred-work-explicitly-not-built-yet-and-why)). |
 | Platform admin console + `SUPER_ADMIN` impersonation in Sprint 5 | Support tooling was premature before a concrete cross-school support workflow existed. | Activated as Phase 9 after the product owner requested tenant provisioning, cross-school support, and globally-audited support changes. |
-| MySQL + full tenant-isolation test suite as a day-one requirement | You cannot validate "does the core attendance feature even work and feel right" without first standing up a full database and isolation layer. That's backwards — it's expensive to change data models once real data and migrations exist. | **Mock data first.** Build and demo every core feature against an in-memory data layer. Swap to a real database only once the feature set and shape of the data are proven (Phase 6). |
+| PostgreSQL + full tenant-isolation test suite as a day-one requirement | You cannot validate "does the core attendance feature even work and feel right" without first standing up a full database and isolation layer. That's backwards — it's expensive to change data models once real data and migrations exist. | **Mock data first.** Build and demo every core feature against an in-memory data layer. Swap to a real database only once the feature set and shape of the data are proven (Phase 6). |
 | DPIA / NPC registration / DPA templates in Sprint 5 | Real, necessary, but compliance work belongs right before public launch with real student data — not before we know the product works. | Moved to the final pre-launch phase, unchanged in substance. |
 
 **The core correction: build feature by feature, prove each one works against mock data, and only bring in infrastructure (database, cache, payment provider, compliance paperwork) when a concrete, current need forces it.** This is YAGNI applied to a roadmap, not just to code.
@@ -67,8 +67,9 @@ This is what makes "mock first, real database later" actually cheap instead of a
                                                      ┌───────────────┴───────────────┐
                                                      │                               │
                                           [Mock Repository]                [Real Repository]
-                                          (in-memory / JSON,                (MySQL via Sequelize
-                                           used Phases 1–5)                  or Prisma, Phase 6+)
+                                          (in-memory / JSON,                (PostgreSQL via the
+                                           used Phases 1–5)                  `pg` driver, no ORM,
+                                                                             Phase 6+)
 ```
 
 - Repository interfaces live in `src/repositories/interfaces/` (e.g. `ITenantRepository.ts`, `IUserRepository.ts`, `IAttendanceRepository.ts`).
@@ -200,7 +201,7 @@ Each phase = one feature, demoable end-to-end, with its own checklist. Do not st
 
 **Goal:** everything built in Phases 1–5 keeps working, unchanged at the service/controller layer, on a real database.
 
-- [ ] Stand up MySQL (Docker Compose for local dev)
+- [ ] Stand up PostgreSQL (Docker Compose for local dev)
 - [ ] Implement `db/` repositories satisfying the exact interfaces used by mock repositories
 - [ ] Migration: create real tables (`schools`, `users`, `devices`, `attendance_logs`) with `school_id` foreign keys everywhere a mock repo used `schoolId`
 - [ ] Flip `DATA_LAYER=db`; run the full existing test suite unchanged against the new repositories — this is the acceptance test for whether the ports-and-adapters boundary actually held

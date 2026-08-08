@@ -128,12 +128,12 @@ export const AttendanceMonitorPage = () => {
 
     let cancelled = false;
 
-    void fetchAdminDevices(activeSchool.id)
-      .then((devices) => {
+    void fetchAdminDevices(activeSchool.id, { page: 1, pageSize: 20, sort: 'name', dir: 'asc' })
+      .then((payload) => {
         if (!cancelled) {
           setDeviceState({
             schoolId: activeSchool.id,
-            devices
+            devices: payload.devices
           });
         }
       })

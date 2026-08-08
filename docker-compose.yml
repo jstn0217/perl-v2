@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: perl-app
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
     environment:
       NODE_ENV: ${NODE_ENV:-development}
@@ -22,8 +22,8 @@ services:
       INITIAL_SUPPORT_EMAIL: ${INITIAL_SUPPORT_EMAIL:-support@perl.system}
       INITIAL_SUPPORT_PASSWORD: ${INITIAL_SUPPORT_PASSWORD:-Support123!}
       VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
-      DB_HOST: ${DB_HOST:-mysql}
-      DB_PORT: ${DB_PORT:-3306}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
       DB_USER: ${DB_USER:-perl}
       DB_PASSWORD: ${DB_PASSWORD:-perl_dev_password}
       DB_NAME: ${DB_NAME:-perl}
@@ -39,31 +39,30 @@ services:
       SEMAPHORE_API_KEY: ${SEMAPHORE_API_KEY:-}
       SEMAPHORE_SENDER_NAME: ${SEMAPHORE_SENDER_NAME:-SEMAPHORE}
       SEMAPHORE_API_URL: ${SEMAPHORE_API_URL:-https://api.semaphore.co/api/v4/messages}
-      WAIT_FOR_MYSQL: ${WAIT_FOR_MYSQL:-auto}
+      WAIT_FOR_DB: ${WAIT_FOR_DB:-auto}
     ports:
       - '4000:4000'
       - '5173:5173'
-  mysql:
-    image: mysql:8.4
-    container_name: perl-mysql
+  postgres:
+    image: postgres:16-alpine
+    container_name: perl-postgres
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${DB_NAME:-perl}
-      MYSQL_USER: ${DB_USER:-perl}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-perl_dev_password}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_password}
+      POSTGRES_DB: ${DB_NAME:-perl}
+      POSTGRES_USER: ${DB_USER:-perl}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-perl_dev_password}
     ports:
-      - '3306:3306'
+      - '5432:5432'
     volumes:
-      - mysql-data:/var/lib/mysql
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test:
         - CMD-SHELL
-        - mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent
+        - pg_isready -U ${DB_USER:-perl}
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 20s
 
 volumes:
-  mysql-data:
+  postgres-data:

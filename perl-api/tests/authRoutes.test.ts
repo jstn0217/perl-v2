@@ -222,6 +222,146 @@ describeForDataLayers('Phase 2 auth routes', (dataLayer) => {
     expect(throttledResponse.headers['retry-after']).toEqual(expect.any(String));
   });
 
+  it('lets an authenticated user update their own name', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!',
+      schoolSlug: 'st-marys'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+
+    const response = await request(app)
+      .patch('/api/auth/profile')
+      .set('Cookie', cookie)
+      .send({ firstName: 'Marabel', lastName: 'Santos-Reyes' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toMatchObject({
+      id: 'user-stmarys-admin',
+      schoolId: 'school-st-marys',
+      firstName: 'Marabel',
+      lastName: 'Santos-Reyes'
+    });
+  });
+
+  it('changes the password when currentPassword matches, and the new password logs in afterward', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!',
+      schoolSlug: 'st-marys'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+
+    const response = await request(app)
+      .patch('/api/auth/profile')
+      .set('Cookie', cookie)
+      .send({ currentPassword: 'Password123!', newPassword: 'NewPassword456!' });
+
+    expect(response.status).toBe(200);
+
+    const reloginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'NewPassword456!',
+      schoolSlug: 'st-marys'
+    });
+
+    expect(reloginResponse.status).toBe(200);
+  });
+
+  it('rejects a password change when currentPassword is wrong', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!',
+      schoolSlug: 'st-marys'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+
+    const response = await request(app)
+      .patch('/api/auth/profile')
+      .set('Cookie', cookie)
+      .send({ currentPassword: 'WrongPassword!', newPassword: 'NewPassword456!' });
+
+    expect(response.status).toBe(401);
+    expect(response.body.message).toBe('Current password is incorrect.');
+  });
+
+  it('rejects setting a new password without currentPassword', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!',
+      schoolSlug: 'st-marys'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+
+    const response = await request(app)
+      .patch('/api/auth/profile')
+      .set('Cookie', cookie)
+      .send({ newPassword: 'NewPassword456!' });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('cannot alter another user by passing an id, role, or schoolId in the body', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!',
+      schoolSlug: 'st-marys'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+
+    const response = await request(app)
+      .patch('/api/auth/profile')
+      .set('Cookie', cookie)
+      .send({
+        id: 'user-riverside-admin',
+        role: 'SYSTEM_ADMIN',
+        schoolId: 'school-riverside',
+        firstName: 'Mara'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toMatchObject({
+      id: 'user-stmarys-admin',
+      schoolId: 'school-st-marys',
+      role: 'ADMIN',
+      firstName: 'Mara'
+    });
+  });
+
+  it('rejects unauthenticated profile updates', async () => {
+    const app = createApp(createRepositories(dataLayer));
+
+    const response = await request(app).patch('/api/auth/profile').send({ firstName: 'Nope' });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('lets a platform user update their own profile without a schoolId', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'support@perl.system',
+      password: 'Support123!'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+
+    const response = await request(app)
+      .patch('/api/auth/profile')
+      .set('Cookie', cookie)
+      .send({ firstName: 'Support-Updated' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toMatchObject({
+      schoolId: null,
+      role: 'SUPPORT',
+      firstName: 'Support-Updated'
+    });
+  });
+
   it('responds to allowed-origin CORS preflight requests without opening wildcard access', async () => {
     const app = createApp(createRepositories(dataLayer));
 

@@ -402,7 +402,12 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
           primaryColor: '#123456',
           secondaryColor: '#EAF2FF',
           accentColor: '#FFAA11'
-        }
+        },
+        address: '99 North Campus Drive, Makati City',
+        phone: '(02) 8888-9999',
+        timezone: 'Asia/Manila',
+        academicYearLabel: 'SY 2026-2027',
+        depedSchoolId: 'DEPED-NCR-105999'
       });
 
     expect(updateResponse.status).toBe(200);
@@ -414,7 +419,12 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
         primaryColor: '#123456',
         secondaryColor: '#EAF2FF',
         accentColor: '#FFAA11'
-      }
+      },
+      address: '99 North Campus Drive, Makati City',
+      phone: '(02) 8888-9999',
+      timezone: 'Asia/Manila',
+      academicYearLabel: 'SY 2026-2027',
+      depedSchoolId: 'DEPED-NCR-105999'
     });
 
     const schoolContextResponse = await request(app)

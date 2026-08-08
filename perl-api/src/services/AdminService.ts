@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import type { ITenantRepository } from '../repositories/interfaces/ITenantRepository.js';
-import type { IUserRepository } from '../repositories/interfaces/IUserRepository.js';
+import type { IUserRepository, UserListQuery } from '../repositories/interfaces/IUserRepository.js';
+import type { PagedResult } from '../types/Pagination.js';
 import type { SchoolProfile } from '../types/SchoolProfile.js';
 import type { SchoolUserRole, UserRecord } from '../types/User.js';
 
@@ -183,7 +184,20 @@ export class AdminService {
 
   async updateSchoolProfile(
     schoolId: string,
-    input: Partial<Pick<SchoolProfile, 'name' | 'logoUrl' | 'contactEmail' | 'theme'>>
+    input: Partial<
+      Pick<
+        SchoolProfile,
+        | 'name'
+        | 'logoUrl'
+        | 'contactEmail'
+        | 'theme'
+        | 'address'
+        | 'phone'
+        | 'timezone'
+        | 'academicYearLabel'
+        | 'depedSchoolId'
+      >
+    >
   ): Promise<SchoolProfile> {
     const existing = await this.requireSchool(schoolId);
     const nextName = input.name !== undefined ? normalizeRequiredString(input.name, 'School name') : existing.name;
@@ -195,6 +209,16 @@ export class AdminService {
       secondaryColor: input.theme?.secondaryColor ?? existing.theme.secondaryColor,
       accentColor: input.theme?.accentColor ?? existing.theme.accentColor
     };
+    const nextAddress = input.address !== undefined ? normalizeOptionalString(input.address) : existing.address;
+    const nextPhone = input.phone !== undefined ? normalizeOptionalString(input.phone) : existing.phone;
+    const nextTimezone =
+      input.timezone !== undefined ? normalizeRequiredString(input.timezone, 'Timezone') : existing.timezone;
+    const nextAcademicYearLabel =
+      input.academicYearLabel !== undefined
+        ? normalizeOptionalString(input.academicYearLabel)
+        : existing.academicYearLabel;
+    const nextDepedSchoolId =
+      input.depedSchoolId !== undefined ? normalizeOptionalString(input.depedSchoolId) : existing.depedSchoolId;
 
     assertEmail(nextContactEmail);
     assertHex(nextTheme.primaryColor, 'Primary color');
@@ -205,7 +229,12 @@ export class AdminService {
       name: nextName,
       logoUrl: nextLogoUrl,
       contactEmail: nextContactEmail,
-      theme: nextTheme
+      theme: nextTheme,
+      address: nextAddress,
+      phone: nextPhone,
+      timezone: nextTimezone,
+      academicYearLabel: nextAcademicYearLabel,
+      depedSchoolId: nextDepedSchoolId
     });
 
     if (!updated) {
@@ -220,6 +249,13 @@ export class AdminService {
     const users = await this.userRepository.listBySchool(schoolId);
 
     return users.map((user) => this.toManagedUserView(user));
+  }
+
+  async listUsersPaged(schoolId: string, query: UserListQuery): Promise<PagedResult<ManagedUserView>> {
+    await this.requireSchool(schoolId);
+    const { items, total } = await this.userRepository.listBySchoolPaged(schoolId, query);
+
+    return { items: items.map((user) => this.toManagedUserView(user)), total };
   }
 
   async createUser(schoolId: string, input: CreateManagedUserInput): Promise<ManagedUserView> {
