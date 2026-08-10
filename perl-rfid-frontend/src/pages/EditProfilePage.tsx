@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { InlineAlert } from '../components/InlineAlert';
 import { updateProfile } from '../lib/api';
 import { useAuth } from '../providers/auth-context';
 
@@ -126,13 +127,9 @@ export const EditProfilePage = () => {
         </div>
 
         {error ? (
-          <div className="form-message form-message--error" role="alert">
-            {error}
-          </div>
+          <InlineAlert tone="error" message={error} />
         ) : success ? (
-          <div className="form-message" role="status">
-            {success}
-          </div>
+          <InlineAlert message={success} />
         ) : null}
 
         <div className="form-actions">

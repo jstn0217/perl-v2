@@ -84,7 +84,10 @@ export class DbDeviceRepository implements IDeviceRepository {
     if (search) {
       params.push(`%${search}%`);
       const placeholder = `$${params.length}`;
-      conditions.push(`(name ILIKE ${placeholder} OR location ILIKE ${placeholder})`);
+      conditions.push(
+        `(name ILIKE ${placeholder} OR location ILIKE ${placeholder}
+          OR id ILIKE ${placeholder} OR key_last_four ILIKE ${placeholder})`
+      );
     }
 
     const whereClause = conditions.join(' AND ');

@@ -5,6 +5,7 @@ import { Modal } from '../components/Modal';
 import { ListToolbar } from '../components/ListToolbar';
 import { Pagination } from '../components/Pagination';
 import { useListQueryState } from '../hooks/useListQueryState';
+import { useServerList } from '../hooks/useServerList';
 import {
   createAdminUser,
   deactivateAdminUser,
@@ -30,7 +31,6 @@ import type {
 
 const roleOptions: SchoolUserRole[] = ['ADMIN', 'STAFF', 'STUDENT', 'GUARDIAN'];
 const USER_PAGE_SIZE = 8;
-const EXPORT_ROW_CAP = 100;
 const importHeaders = [
   'email',
   'password',
@@ -79,14 +79,6 @@ export const UserManagementPage = () => {
     defaultFilters: emptyUserFilters
   });
 
-  const [listState, setListState] = useState<{
-    requestKey: string;
-    users: ManagedUser[];
-    total: number;
-  } | null>(null);
-  const [listErrorState, setListErrorState] = useState<{ requestKey: string; message: string } | null>(
-    null
-  );
   const [studentsDirectory, setStudentsDirectory] = useState<ManagedUser[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -125,56 +117,26 @@ export const UserManagementPage = () => {
     reloadToken
   ].join('|');
 
-  useEffect(() => {
-    if (!sessionUser) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void fetchAdminUsers(activeSchool.id, {
-      page: query.page,
-      pageSize: query.pageSize,
-      search: query.debouncedSearch || undefined,
-      sort: query.sort,
-      dir: query.dir,
-      role: (query.filters.role || undefined) as SchoolUserRole | undefined,
-      status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
-    })
-      .then((payload) => {
-        if (cancelled) return;
-        setListState({ requestKey: listRequestKey, users: payload.users, total: payload.total });
-        setListErrorState(null);
-      })
-      .catch((loadError) => {
-        if (cancelled) return;
-        setListErrorState({
-          requestKey: listRequestKey,
-          message: loadError instanceof Error ? loadError.message : 'Unable to load school users.'
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listRequestKey, sessionUser]);
-
-  const users = useMemo(
-    () => (listState?.requestKey === listRequestKey ? listState.users : []),
-    [listRequestKey, listState]
-  );
-  // Keep the last known total visible while a refetch is in flight (not gated on
-  // listRequestKey) so the toolbar's aria-live result count doesn't announce a
-  // misleading "0 people" on every keystroke before the new page has loaded.
-  const total = listState?.total ?? 0;
-  const listStatus: 'loading' | 'ready' | 'error' =
-    listErrorState?.requestKey === listRequestKey
-      ? 'error'
-      : listState?.requestKey === listRequestKey
-        ? 'ready'
-        : 'loading';
-  const listError = listErrorState?.requestKey === listRequestKey ? listErrorState.message : null;
+  const {
+    items: users,
+    total,
+    status: listStatus,
+    error: listError
+  } = useServerList<ManagedUser>({
+    requestKey: listRequestKey,
+    enabled: Boolean(sessionUser),
+    errorMessage: 'Unable to load school users.',
+    fetcher: () =>
+      fetchAdminUsers(activeSchool.id, {
+        page: query.page,
+        pageSize: query.pageSize,
+        search: query.debouncedSearch || undefined,
+        sort: query.sort,
+        dir: query.dir,
+        role: (query.filters.role || undefined) as SchoolUserRole | undefined,
+        status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
+      }).then((payload) => ({ items: payload.users, total: payload.total }))
+  });
 
   useEffect(() => {
     if (!sessionUser) return;
@@ -182,10 +144,11 @@ export const UserManagementPage = () => {
 
     void fetchAdminUsers(activeSchool.id, {
       page: 1,
-      pageSize: EXPORT_ROW_CAP,
+      pageSize: 1,
       sort: 'name',
       dir: 'asc',
-      role: 'STUDENT'
+      role: 'STUDENT',
+      all: true
     })
       .then((payload) => {
         if (!cancelled) setStudentsDirectory(payload.users);
@@ -468,12 +431,13 @@ export const UserManagementPage = () => {
     try {
       const payload = await fetchAdminUsers(activeSchool.id, {
         page: 1,
-        pageSize: EXPORT_ROW_CAP,
+        pageSize: 1,
         search: query.debouncedSearch || undefined,
         sort: query.sort,
         dir: query.dir,
         role: (query.filters.role || undefined) as SchoolUserRole | undefined,
-        status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
+        status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined,
+        all: true
       });
       downloadCsvColumns(
         `${activeSchool.slug}-people-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -481,11 +445,7 @@ export const UserManagementPage = () => {
         selectedExportColumns,
         payload.users
       );
-      if (payload.total > payload.users.length) {
-        setNotice(
-          `Exported the first ${payload.users.length} of ${payload.total} matching people (export is capped at ${EXPORT_ROW_CAP} rows).`
-        );
-      }
+      setNotice(`Exported ${payload.users.length} matching ${payload.users.length === 1 ? 'person' : 'people'}.`);
     } catch (exportError) {
       setError(exportError instanceof Error ? exportError.message : 'Unable to export people.');
     } finally {
@@ -513,7 +473,7 @@ export const UserManagementPage = () => {
         </article>
         <article className="preview-panel stat-panel">
           <p className="panel-label">Students on file</p>
-          <strong>{studentsDirectory.length}{studentsDirectory.length >= EXPORT_ROW_CAP ? '+' : ''}</strong>
+          <strong>{studentsDirectory.length}</strong>
           <p>RFID-attendance subjects available to link as guardians.</p>
         </article>
         <article className="preview-panel stat-panel">

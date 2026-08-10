@@ -132,7 +132,8 @@ export class DbUserRepository implements IUserRepository {
       params.push(`%${search}%`);
       const placeholder = `$${params.length}`;
       conditions.push(
-        `(email ILIKE ${placeholder} OR first_name ILIKE ${placeholder} OR last_name ILIKE ${placeholder})`
+        `(email ILIKE ${placeholder} OR first_name ILIKE ${placeholder} OR last_name ILIKE ${placeholder}
+          OR card_uid ILIKE ${placeholder} OR section ILIKE ${placeholder})`
       );
     }
 

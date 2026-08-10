@@ -306,6 +306,7 @@ export const SchoolProfileAdminPage = () => {
                 value={formState.timezone}
                 onChange={(event) => setFormState((current) => ({ ...current, timezone: event.target.value }))}
                 placeholder="Asia/Manila"
+                required
               />
             </label>
 

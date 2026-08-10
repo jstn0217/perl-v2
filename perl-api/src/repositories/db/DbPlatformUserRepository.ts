@@ -51,25 +51,16 @@ export class DbPlatformUserRepository implements IPlatformUserRepository {
     userId: string,
     changes: Partial<Pick<PlatformUserRecord, 'firstName' | 'lastName' | 'passwordHash'>>
   ): Promise<PlatformUserRecord | null> {
-    const existing = await this.findById(userId);
-
-    if (!existing) {
-      return null;
-    }
-
-    const next = {
-      firstName: changes.firstName ?? existing.firstName,
-      lastName: changes.lastName ?? existing.lastName,
-      passwordHash: changes.passwordHash ?? existing.passwordHash
-    };
-
-    await getDbPool().query(
+    const { rows } = await getDbPool().query<PlatformUserRow>(
       `UPDATE platform_users
-       SET first_name = $1, last_name = $2, password_hash = $3
-       WHERE id = $4`,
-      [next.firstName, next.lastName, next.passwordHash, userId]
+       SET first_name = COALESCE($1, first_name),
+           last_name = COALESCE($2, last_name),
+           password_hash = COALESCE($3, password_hash)
+       WHERE id = $4 AND is_active = TRUE
+       RETURNING id, email, password_hash, first_name, last_name, role, is_active`,
+      [changes.firstName ?? null, changes.lastName ?? null, changes.passwordHash ?? null, userId]
     );
 
-    return this.findById(userId);
+    return rows[0] ? mapPlatformUser(rows[0]) : null;
   }
 }

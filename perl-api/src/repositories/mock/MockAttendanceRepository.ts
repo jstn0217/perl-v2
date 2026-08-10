@@ -1,5 +1,6 @@
 import type { AttendanceLogRecord, AttendanceLogRecordPage } from '../../types/Attendance.js';
 import type { IAttendanceRepository } from '../interfaces/IAttendanceRepository.js';
+import { toLocalDateKey } from '../../utils/timezone.js';
 
 let attendanceLogs: AttendanceLogRecord[] = [];
 
@@ -19,8 +20,10 @@ export class MockAttendanceRepository implements IAttendanceRepository {
     return record;
   }
 
-  async findByUserAndDate(userId: string, date: string): Promise<AttendanceLogRecord[]> {
-    return attendanceLogs.filter((log) => log.userId === userId && log.scannedAt.startsWith(date));
+  async findByUserAndDate(userId: string, date: string, timezone: string): Promise<AttendanceLogRecord[]> {
+    return attendanceLogs.filter(
+      (log) => log.userId === userId && toLocalDateKey(log.scannedAt, timezone) === date
+    );
   }
 
   async listBySchool(schoolId: string, page: number, pageSize: number): Promise<AttendanceLogRecordPage> {

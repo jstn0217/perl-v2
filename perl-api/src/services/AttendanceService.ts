@@ -1,6 +1,8 @@
 import type { IAttendanceRepository } from '../repositories/interfaces/IAttendanceRepository.js';
 import type { IDeviceRepository } from '../repositories/interfaces/IDeviceRepository.js';
 import type { IUserRepository } from '../repositories/interfaces/IUserRepository.js';
+import type { ITenantRepository } from '../repositories/interfaces/ITenantRepository.js';
+import { toLocalDateKey } from '../utils/timezone.js';
 import type {
   AttendanceDisplayStudent,
   AttendanceLogRecordPage,
@@ -22,15 +24,21 @@ const toMinuteDifference = (earlierIso: string, laterIso: string) => {
   return Math.floor((Date.parse(laterIso) - Date.parse(earlierIso)) / (1000 * 60));
 };
 
-const toDateKey = (isoDate: string) => isoDate.slice(0, 10);
+const DEFAULT_TIMEZONE = 'UTC';
 
 export class AttendanceService {
   constructor(
     private readonly attendanceRepository: IAttendanceRepository,
     private readonly deviceRepository: IDeviceRepository,
     private readonly userRepository: IUserRepository,
+    private readonly tenantRepository?: ITenantRepository,
     private readonly notificationService?: NotificationService
   ) {}
+
+  private async resolveTimezone(schoolId: string): Promise<string> {
+    const school = await this.tenantRepository?.findSchoolById(schoolId);
+    return school?.timezone || DEFAULT_TIMEZONE;
+  }
 
   async scanCard(
     schoolId: string,
@@ -68,7 +76,12 @@ export class AttendanceService {
       });
     }
 
-    const todaysLogs = await this.attendanceRepository.findByUserAndDate(student.id, toDateKey(scannedAt));
+    const timezone = await this.resolveTimezone(schoolId);
+    const todaysLogs = await this.attendanceRepository.findByUserAndDate(
+      student.id,
+      toLocalDateKey(scannedAt, timezone),
+      timezone
+    );
     const admittedLogs = todaysLogs.filter((log) => log.verdict === 'ADMITTED');
 
     if (admittedLogs.length >= MAX_DAILY_SCANS) {

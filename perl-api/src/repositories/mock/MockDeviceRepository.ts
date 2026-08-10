@@ -55,7 +55,7 @@ export class MockDeviceRepository implements IDeviceRepository {
         if (query.status === 'active' && !device.isActive) return false;
         if (query.status === 'inactive' && device.isActive) return false;
         if (search) {
-          const haystack = `${device.name} ${device.location}`.toLowerCase();
+          const haystack = `${device.name} ${device.location} ${device.id} ${device.keyLastFour}`.toLowerCase();
           if (!haystack.includes(search)) return false;
         }
         return true;

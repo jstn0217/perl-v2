@@ -79,12 +79,14 @@ export class AuthService {
     const passwordHash =
       input.newPassword !== undefined ? await this.assertPasswordChange(currentUser, input) : undefined;
 
+    const changes = {
+      ...(firstName !== undefined ? { firstName } : {}),
+      ...(lastName !== undefined ? { lastName } : {}),
+      ...(passwordHash !== undefined ? { passwordHash } : {})
+    };
+
     if (isPlatformRole(currentUser.role)) {
-      const updated = await this.platformUserRepository.updateProfile(currentUser.id, {
-        ...(firstName !== undefined ? { firstName } : {}),
-        ...(lastName !== undefined ? { lastName } : {}),
-        ...(passwordHash !== undefined ? { passwordHash } : {})
-      });
+      const updated = await this.platformUserRepository.updateProfile(currentUser.id, changes);
 
       if (!updated) {
         throw new Error('User not found.');
@@ -97,11 +99,7 @@ export class AuthService {
       throw new Error('User not found.');
     }
 
-    const updated = await this.userRepository.update(currentUser.id, currentUser.schoolId, {
-      ...(firstName !== undefined ? { firstName } : {}),
-      ...(lastName !== undefined ? { lastName } : {}),
-      ...(passwordHash !== undefined ? { passwordHash } : {})
-    });
+    const updated = await this.userRepository.update(currentUser.id, currentUser.schoolId, changes);
 
     if (!updated) {
       throw new Error('User not found.');

@@ -2,7 +2,7 @@ import type { AttendanceLogRecord, AttendanceLogRecordPage } from '../../types/A
 
 export interface IAttendanceRepository {
   create(log: Omit<AttendanceLogRecord, 'id'>): Promise<AttendanceLogRecord>;
-  findByUserAndDate(userId: string, date: string): Promise<AttendanceLogRecord[]>;
+  findByUserAndDate(userId: string, date: string, timezone: string): Promise<AttendanceLogRecord[]>;
   listBySchool(schoolId: string, page: number, pageSize: number): Promise<AttendanceLogRecordPage>;
   listBySchoolForUsers(
     schoolId: string,

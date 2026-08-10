@@ -19,6 +19,14 @@ const readPositiveInteger = (value: unknown, fallback: number, maximum: number) 
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, maximum) : fallback;
 };
 
+const readBoolean = (value: unknown) => value === 'true' || value === '1';
+
+// Used for the picker/export code paths that need the school's full matching
+// record set rather than a UI page (e.g. the guardian-linking student picker,
+// full-result CSV export). Not a hard limit on school size, just a sane
+// ceiling so a malformed request can't force an unbounded DB scan.
+const UNBOUNDED_PAGE_SIZE = 100_000;
+
 const userRoles = ['ADMIN', 'STAFF', 'STUDENT', 'GUARDIAN'];
 
 const readUserRole = (value: unknown) =>
@@ -156,8 +164,9 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
           return res.status(400).json({ message: 'School scope is required.' });
         }
 
-        const page = readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);
-        const pageSize = readPositiveInteger(req.query.pageSize, 20, 100);
+        const wantsAll = readBoolean(req.query.all);
+        const page = wantsAll ? 1 : readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);
+        const pageSize = wantsAll ? UNBOUNDED_PAGE_SIZE : readPositiveInteger(req.query.pageSize, 20, 100);
         const { items, total } = await adminService.listUsersPaged(schoolId, {
           page,
           pageSize,
@@ -294,8 +303,9 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
           return res.status(400).json({ message: 'School scope is required.' });
         }
 
-        const page = readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);
-        const pageSize = readPositiveInteger(req.query.pageSize, 20, 100);
+        const wantsAll = readBoolean(req.query.all);
+        const page = wantsAll ? 1 : readPositiveInteger(req.query.page, 1, Number.MAX_SAFE_INTEGER);
+        const pageSize = wantsAll ? UNBOUNDED_PAGE_SIZE : readPositiveInteger(req.query.pageSize, 20, 100);
         const { items, total } = await deviceService.listDevicesPaged(schoolId, {
           page,
           pageSize,

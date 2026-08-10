@@ -134,6 +134,7 @@ export const createAttendanceController = (
     repositories.attendanceRepository,
     repositories.deviceRepository,
     repositories.userRepository,
+    repositories.tenantRepository,
     notificationService
   );
   const auditService = new AuditService(repositories.auditRepository);

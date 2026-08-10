@@ -322,6 +322,8 @@ export interface ManagedUsersQuery {
   dir?: 'asc' | 'desc';
   role?: UserRole;
   status?: 'active' | 'inactive';
+  /** Bypass server-side pagination and return every matching record (picker/export use only). */
+  all?: boolean;
 }
 
 export interface ManagedUsersPage {
@@ -347,6 +349,7 @@ export const fetchAdminUsers = async (
   setQueryParam(url, 'dir', query.dir);
   setQueryParam(url, 'role', query.role);
   setQueryParam(url, 'status', query.status);
+  if (query.all) url.searchParams.set('all', 'true');
 
   return fetchJson<ManagedUsersPage>(url);
 };
@@ -398,6 +401,8 @@ export interface ManagedDevicesQuery {
   sort?: string;
   dir?: 'asc' | 'desc';
   status?: 'active' | 'inactive';
+  /** Bypass server-side pagination and return every matching record (export use only). */
+  all?: boolean;
 }
 
 export interface ManagedDevicesPage {
@@ -418,6 +423,7 @@ export const fetchAdminDevices = async (
   setQueryParam(url, 'sort', query.sort);
   setQueryParam(url, 'dir', query.dir);
   setQueryParam(url, 'status', query.status);
+  if (query.all) url.searchParams.set('all', 'true');
 
   return fetchJson<ManagedDevicesPage>(url);
 };

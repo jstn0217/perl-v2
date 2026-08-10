@@ -1,4 +1,5 @@
 import type { ChangeEvent, FormEvent } from 'react';
+import { InlineAlert } from '../InlineAlert';
 import type { ManagedUser, SchoolUserRole } from '../../types/admin';
 import type { UserFormState } from './userFormState';
 
@@ -40,11 +41,7 @@ export const UserForm = ({
 
   return (
     <form className="admin-form modal-form" onSubmit={onSubmit}>
-      {error ? (
-        <div className="form-message form-message--error" role="alert">
-          {error}
-        </div>
-      ) : null}
+      {error ? <InlineAlert tone="error" message={error} /> : null}
 
       <div className="field-grid">
         <label className="field">

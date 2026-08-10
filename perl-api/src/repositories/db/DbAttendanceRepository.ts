@@ -31,13 +31,13 @@ export class DbAttendanceRepository implements IAttendanceRepository {
     };
   }
 
-  async findByUserAndDate(userId: string, date: string): Promise<AttendanceLogRecord[]> {
+  async findByUserAndDate(userId: string, date: string, timezone: string): Promise<AttendanceLogRecord[]> {
     const { rows } = await getDbPool().query<AttendanceLogRow>(
       `SELECT id, school_id, user_id, device_id, direction, verdict, denial_reason, message, scanned_at
        FROM attendance_logs
-       WHERE user_id = $1 AND (scanned_at AT TIME ZONE 'UTC')::date = $2::date
+       WHERE user_id = $1 AND (scanned_at AT TIME ZONE $3)::date = $2::date
        ORDER BY scanned_at DESC, created_at DESC`,
-      [userId, date]
+      [userId, date, timezone]
     );
 
     return rows.map(mapAttendanceRow);

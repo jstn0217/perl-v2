@@ -99,7 +99,9 @@ export class MockUserRepository implements IUserRepository {
         if (query.status === 'active' && !user.isActive) return false;
         if (query.status === 'inactive' && user.isActive) return false;
         if (search) {
-          const haystack = `${user.firstName} ${user.lastName} ${user.email}`.toLowerCase();
+          const haystack = `${user.firstName} ${user.lastName} ${user.email} ${user.cardUid ?? ''} ${
+            user.section ?? ''
+          }`.toLowerCase();
           if (!haystack.includes(search)) return false;
         }
         return true;

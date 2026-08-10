@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { InlineAlert } from '../components/InlineAlert';
 import { Modal } from '../components/Modal';
 import { ListToolbar } from '../components/ListToolbar';
 import { Pagination } from '../components/Pagination';
 import { useListQueryState } from '../hooks/useListQueryState';
+import { useServerList } from '../hooks/useServerList';
 import {
   createAdminDevice,
   deactivateAdminDevice,
@@ -23,7 +24,6 @@ type DeviceFormState = {
 };
 
 const DEVICE_PAGE_SIZE = 6;
-const EXPORT_ROW_CAP = 100;
 const emptyDeviceFilters = {
   status: ''
 };
@@ -55,14 +55,6 @@ export const DeviceManagementPage = () => {
     defaultFilters: emptyDeviceFilters
   });
 
-  const [listState, setListState] = useState<{
-    requestKey: string;
-    devices: ManagedDevice[];
-    total: number;
-  } | null>(null);
-  const [listErrorState, setListErrorState] = useState<{ requestKey: string; message: string } | null>(
-    null
-  );
   const [reloadToken, setReloadToken] = useState(0);
 
   const [formState, setFormState] = useState<DeviceFormState>(createEmptyForm);
@@ -93,51 +85,25 @@ export const DeviceManagementPage = () => {
     reloadToken
   ].join('|');
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-
-    void fetchAdminDevices(activeSchool.id, {
-      page: query.page,
-      pageSize: query.pageSize,
-      search: query.debouncedSearch || undefined,
-      sort: query.sort,
-      dir: query.dir,
-      status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
-    })
-      .then((payload) => {
-        if (cancelled) return;
-        setListState({ requestKey: listRequestKey, devices: payload.devices, total: payload.total });
-        setListErrorState(null);
-      })
-      .catch((loadError) => {
-        if (cancelled) return;
-        setListErrorState({
-          requestKey: listRequestKey,
-          message: loadError instanceof Error ? loadError.message : 'Unable to load school devices.'
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listRequestKey, user]);
-
-  const devices = useMemo(
-    () => (listState?.requestKey === listRequestKey ? listState.devices : []),
-    [listRequestKey, listState]
-  );
-  // Keep the last known total visible while a refetch is in flight so the toolbar's
-  // aria-live result count doesn't announce a misleading "0 devices" mid-search.
-  const total = listState?.total ?? 0;
-  const listStatus: 'loading' | 'ready' | 'error' =
-    listErrorState?.requestKey === listRequestKey
-      ? 'error'
-      : listState?.requestKey === listRequestKey
-        ? 'ready'
-        : 'loading';
-  const listError = listErrorState?.requestKey === listRequestKey ? listErrorState.message : null;
+  const {
+    items: devices,
+    total,
+    status: listStatus,
+    error: listError
+  } = useServerList<ManagedDevice>({
+    requestKey: listRequestKey,
+    enabled: Boolean(user),
+    errorMessage: 'Unable to load school devices.',
+    fetcher: () =>
+      fetchAdminDevices(activeSchool.id, {
+        page: query.page,
+        pageSize: query.pageSize,
+        search: query.debouncedSearch || undefined,
+        sort: query.sort,
+        dir: query.dir,
+        status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
+      }).then((payload) => ({ items: payload.devices, total: payload.total }))
+  });
 
   const counts = useMemo(
     () => ({
@@ -249,11 +215,12 @@ export const DeviceManagementPage = () => {
     try {
       const payload = await fetchAdminDevices(activeSchool.id, {
         page: 1,
-        pageSize: EXPORT_ROW_CAP,
+        pageSize: 1,
         search: query.debouncedSearch || undefined,
         sort: query.sort,
         dir: query.dir,
-        status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined
+        status: (query.filters.status || undefined) as 'active' | 'inactive' | undefined,
+        all: true
       });
       downloadCsvColumns(
         `${activeSchool.slug}-devices-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -261,11 +228,7 @@ export const DeviceManagementPage = () => {
         selectedExportColumns,
         payload.devices
       );
-      if (payload.total > payload.devices.length) {
-        setNotice(
-          `Exported the first ${payload.devices.length} of ${payload.total} matching devices (export is capped at ${EXPORT_ROW_CAP} rows).`
-        );
-      }
+      setNotice(`Exported ${payload.devices.length} matching ${payload.devices.length === 1 ? 'device' : 'devices'}.`);
     } catch (exportError) {
       setError(exportError instanceof Error ? exportError.message : 'Unable to export devices.');
     } finally {
@@ -456,11 +419,7 @@ export const DeviceManagementPage = () => {
         title="Register a new scanner"
       >
         <form className="admin-form modal-form" onSubmit={handleSubmit}>
-          {error ? (
-            <div className="form-message form-message--error" role="alert">
-              {error}
-            </div>
-          ) : null}
+          {error ? <InlineAlert tone="error" message={error} /> : null}
 
           <label className="field">
             <span>Device name</span>

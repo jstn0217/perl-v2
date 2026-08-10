@@ -78,6 +78,47 @@ export const useListQueryState = <Filters extends Record<string, string>>({
     [setSearchParams]
   );
 
+  const setPage = useCallback(
+    (nextPage: number) => updateParams({ page: nextPage > 1 ? String(nextPage) : null }),
+    [updateParams]
+  );
+
+  const setSearch = useCallback(
+    (value: string) => updateParams({ q: value || null }, true),
+    [updateParams]
+  );
+
+  const setSort = useCallback(
+    (nextSort: string, nextDir: SortDirection = 'asc') =>
+      updateParams(
+        {
+          sort: nextSort === defaultSort ? null : nextSort,
+          dir: nextDir === 'asc' ? null : nextDir
+        },
+        true
+      ),
+    [defaultSort, updateParams]
+  );
+
+  const setFilter = useCallback(
+    (key: keyof Filters, value: string) => updateParams({ [String(key)]: value || null }, true),
+    [updateParams]
+  );
+
+  const clear = useCallback(
+    () =>
+      updateParams(
+        {
+          q: null,
+          sort: null,
+          dir: null,
+          ...Object.fromEntries(filterKeys.map((key) => [String(key), null]))
+        },
+        true
+      ),
+    [filterKeys, updateParams]
+  );
+
   return {
     page,
     pageSize,
@@ -87,26 +128,10 @@ export const useListQueryState = <Filters extends Record<string, string>>({
     dir,
     filters,
     activeFilterCount,
-    setPage: (nextPage: number) => updateParams({ page: nextPage > 1 ? String(nextPage) : null }),
-    setSearch: (value: string) => updateParams({ q: value || null }, true),
-    setSort: (nextSort: string, nextDir: SortDirection = 'asc') =>
-      updateParams(
-        {
-          sort: nextSort === defaultSort ? null : nextSort,
-          dir: nextDir === 'asc' ? null : nextDir
-        },
-        true
-      ),
-    setFilter: (key: keyof Filters, value: string) => updateParams({ [String(key)]: value || null }, true),
-    clear: () =>
-      updateParams(
-        {
-          q: null,
-          sort: null,
-          dir: null,
-          ...Object.fromEntries(filterKeys.map((key) => [String(key), null]))
-        },
-        true
-      )
+    setPage,
+    setSearch,
+    setSort,
+    setFilter,
+    clear
   };
 };
