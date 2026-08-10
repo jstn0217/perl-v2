@@ -23,7 +23,7 @@ const deviceOrderClause = (sort: string | undefined, dir: string | undefined) =>
 export class DbDeviceRepository implements IDeviceRepository {
   async findDefaultBySchoolId(schoolId: string): Promise<DeviceRecord | null> {
     const { rows } = await getDbPool().query<DeviceRow>(
-      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active
+      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active, last_seen_at
        FROM devices
        WHERE school_id = $1 AND is_active = TRUE
        ORDER BY created_at ASC, id ASC
@@ -36,7 +36,7 @@ export class DbDeviceRepository implements IDeviceRepository {
 
   async findById(deviceId: string): Promise<DeviceRecord | null> {
     const { rows } = await getDbPool().query<DeviceRow>(
-      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active
+      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active, last_seen_at
        FROM devices
        WHERE id = $1
        LIMIT 1`,
@@ -48,7 +48,7 @@ export class DbDeviceRepository implements IDeviceRepository {
 
   async findByKeyHash(keyHash: string): Promise<DeviceRecord | null> {
     const { rows } = await getDbPool().query<DeviceRow>(
-      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active
+      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active, last_seen_at
        FROM devices
        WHERE key_hash = $1 AND is_active = TRUE
        LIMIT 1`,
@@ -60,7 +60,7 @@ export class DbDeviceRepository implements IDeviceRepository {
 
   async listBySchool(schoolId: string): Promise<DeviceRecord[]> {
     const { rows } = await getDbPool().query<DeviceRow>(
-      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active
+      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active, last_seen_at
        FROM devices
        WHERE school_id = $1
        ORDER BY created_at ASC, id ASC`,
@@ -96,7 +96,7 @@ export class DbDeviceRepository implements IDeviceRepository {
 
     const listParams = [...params, query.pageSize, (query.page - 1) * query.pageSize];
     const { rows } = await pool.query<DeviceRow>(
-      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active
+      `SELECT id, school_id, name, location, key_hash, key_last_four, is_active, last_seen_at
        FROM devices
        WHERE ${whereClause}
        ORDER BY ${orderClause}
@@ -152,5 +152,9 @@ export class DbDeviceRepository implements IDeviceRepository {
       [schoolId]
     );
     return result.rowCount ?? 0;
+  }
+
+  async touchLastSeen(deviceId: string): Promise<void> {
+    await getDbPool().query('UPDATE devices SET last_seen_at = NOW() WHERE id = $1', [deviceId]);
   }
 }

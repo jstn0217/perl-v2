@@ -17,6 +17,7 @@ const genericSchool: SchoolProfile = {
   },
   contactEmail: 'support@perl.system',
   smsEnabled: false,
+  features: { sms: false },
   smsSenderName: null,
   address: null,
   phone: null,

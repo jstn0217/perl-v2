@@ -1,4 +1,15 @@
 import type { ComponentType } from 'react';
+import {
+  Building2,
+  ClipboardList,
+  Cpu,
+  LayoutDashboard,
+  MessageSquare,
+  ScanLine,
+  ScrollText,
+  Users,
+  type LucideIcon
+} from 'lucide-react';
 import { AttendanceLogsPage } from './pages/AttendanceLogsPage';
 import { AttendanceMonitorPage } from './pages/AttendanceMonitorPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
@@ -21,6 +32,7 @@ import type { UserRole } from './types/admin';
 export type RouteGuard = (role: UserRole | undefined) => boolean;
 
 export interface AppRouteNav {
+  icon: LucideIcon;
   label: string | ((role: UserRole) => string);
   group: string | ((role: UserRole) => string);
 }
@@ -44,7 +56,7 @@ export const appRoutes: AppRouteDef[] = [
     path: 'dashboard',
     Component: DashboardHomePage,
     redirectTo: '/dashboard',
-    nav: { label: 'Overview', group: 'Attendance' }
+    nav: { icon: LayoutDashboard, label: 'Overview', group: 'Attendance' }
   },
   {
     path: 'account',
@@ -56,13 +68,13 @@ export const appRoutes: AppRouteDef[] = [
     Component: AttendanceMonitorPage,
     guard: canViewLiveMonitor,
     redirectTo: '/logs',
-    nav: { label: 'Live monitor', group: 'Attendance' }
+    nav: { icon: ScanLine, label: 'Live monitor', group: 'Attendance' }
   },
   {
     path: 'logs',
     Component: AttendanceLogsPage,
     redirectTo: '/dashboard',
-    nav: { label: 'Attendance records', group: 'Attendance' }
+    nav: { icon: ClipboardList, label: 'Attendance records', group: 'Reports' }
   },
   {
     path: 'admin/profile',
@@ -70,6 +82,7 @@ export const appRoutes: AppRouteDef[] = [
     guard: canViewSchoolWorkspace,
     redirectTo: '/dashboard',
     nav: {
+      icon: Building2,
       label: 'School profile',
       group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
     }
@@ -80,6 +93,7 @@ export const appRoutes: AppRouteDef[] = [
     guard: canViewSchoolWorkspace,
     redirectTo: '/dashboard',
     nav: {
+      icon: Users,
       label: 'People',
       group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
     }
@@ -90,6 +104,7 @@ export const appRoutes: AppRouteDef[] = [
     guard: canViewSchoolWorkspace,
     redirectTo: '/dashboard',
     nav: {
+      icon: Cpu,
       label: 'Devices',
       group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
     }
@@ -100,6 +115,7 @@ export const appRoutes: AppRouteDef[] = [
     guard: canViewSchoolWorkspace,
     redirectTo: '/dashboard',
     nav: {
+      icon: MessageSquare,
       label: 'SMS delivery',
       group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
     }
@@ -110,6 +126,7 @@ export const appRoutes: AppRouteDef[] = [
     guard: canViewSchoolWorkspace,
     redirectTo: '/dashboard',
     nav: {
+      icon: ScrollText,
       label: (role) => (isPlatformUser(role) ? 'System action log' : 'School action log'),
       group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
     }
@@ -119,6 +136,6 @@ export const appRoutes: AppRouteDef[] = [
     Component: SupportSchoolsPage,
     guard: isPlatformSupport,
     redirectTo: '/dashboard',
-    nav: { label: 'School accounts', group: 'Platform support' }
+    nav: { icon: Building2, label: 'School accounts', group: 'Platform support' }
   }
 ];

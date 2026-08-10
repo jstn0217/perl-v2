@@ -15,6 +15,7 @@ interface UserFormProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   saving: boolean;
   students: ManagedUser[];
+  guardians: ManagedUser[];
   value: UserFormState;
 }
 
@@ -33,6 +34,7 @@ export const UserForm = ({
   onSubmit,
   saving,
   students,
+  guardians,
   value
 }: UserFormProps) => {
   const setField = <Key extends keyof UserFormState>(key: Key, fieldValue: UserFormState[Key]) => {
@@ -42,6 +44,26 @@ export const UserForm = ({
   return (
     <form className="admin-form modal-form" onSubmit={onSubmit}>
       {error ? <InlineAlert tone="error" message={error} /> : null}
+
+      <div className="image-upload-row">
+        {imagePreview ? (
+          <img
+            src={imagePreview}
+            alt="Selected user preview"
+            className="user-avatar user-avatar--large"
+            loading="lazy"
+          />
+        ) : (
+          <span className="user-avatar user-avatar--large user-avatar--fallback" aria-hidden="true">
+            {value.firstName.slice(0, 1)}{value.lastName.slice(0, 1)}
+          </span>
+        )}
+        <label className="field upload-field">
+          <span>User photo</span>
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={onImageChange} />
+          <small>JPEG, PNG, or WebP. Maximum 5 MB.</small>
+        </label>
+      </div>
 
       <div className="field-grid">
         <label className="field">
@@ -85,7 +107,8 @@ export const UserForm = ({
               onChange({
                 ...value,
                 role: event.target.value as SchoolUserRole,
-                linkedStudentIds: event.target.value === 'GUARDIAN' ? value.linkedStudentIds : []
+                linkedStudentIds: event.target.value === 'GUARDIAN' ? value.linkedStudentIds : [],
+                linkedGuardianIds: event.target.value === 'STUDENT' ? value.linkedGuardianIds : []
               })
             }
           >
@@ -97,6 +120,16 @@ export const UserForm = ({
           </select>
         </label>
       </div>
+
+      <label className="field">
+        <span>Address</span>
+        <input
+          type="text"
+          value={value.address}
+          onChange={(event) => setField('address', event.target.value)}
+          placeholder="House / street, barangay, city"
+        />
+      </label>
 
       <label className="field">
         <span>{mode === 'create' ? 'Temporary password' : 'Reset password'}</span>
@@ -155,7 +188,40 @@ export const UserForm = ({
         </fieldset>
       ) : null}
 
-      <div className="field-grid field-grid--triple">
+      {value.role === 'STUDENT' ? (
+        <fieldset className="student-link-fieldset">
+          <legend>Guardians</legend>
+          <p>Select the guardians who can view this student's attendance.</p>
+          <div className="student-link-list">
+            {guardians.length > 0 ? (
+              guardians.map((guardian) => (
+                <label key={guardian.id}>
+                  <input
+                    type="checkbox"
+                    checked={value.linkedGuardianIds.includes(guardian.id)}
+                    onChange={(event) =>
+                      setField(
+                        'linkedGuardianIds',
+                        event.target.checked
+                          ? [...value.linkedGuardianIds, guardian.id]
+                          : value.linkedGuardianIds.filter((id) => id !== guardian.id)
+                      )
+                    }
+                  />
+                  <span>
+                    <strong>{guardian.firstName} {guardian.lastName}</strong>
+                    <small>{guardian.email}</small>
+                  </span>
+                </label>
+              ))
+            ) : (
+              <p>No guardian accounts are available to link.</p>
+            )}
+          </div>
+        </fieldset>
+      ) : null}
+
+      <div className="field-grid">
         <label className="field">
           <span>Card UID</span>
           <input
@@ -166,6 +232,18 @@ export const UserForm = ({
           />
         </label>
 
+        <label className="field">
+          <span>School ID number</span>
+          <input
+            type="text"
+            value={value.schoolIdNumber}
+            onChange={(event) => setField('schoolIdNumber', event.target.value)}
+            placeholder="26-108"
+          />
+        </label>
+      </div>
+
+      <div className="field-grid">
         <label className="field">
           <span>Grade level</span>
           <input
@@ -184,26 +262,6 @@ export const UserForm = ({
             onChange={(event) => setField('section', event.target.value)}
             placeholder="Jade"
           />
-        </label>
-      </div>
-
-      <div className="image-upload-row">
-        {imagePreview ? (
-          <img
-            src={imagePreview}
-            alt="Selected user preview"
-            className="user-avatar user-avatar--large"
-            loading="lazy"
-          />
-        ) : (
-          <span className="user-avatar user-avatar--large user-avatar--fallback" aria-hidden="true">
-            {value.firstName.slice(0, 1)}{value.lastName.slice(0, 1)}
-          </span>
-        )}
-        <label className="field upload-field">
-          <span>User photo</span>
-          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={onImageChange} />
-          <small>JPEG, PNG, or WebP. Maximum 5 MB.</small>
         </label>
       </div>
 

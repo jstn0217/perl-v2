@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import type { RepositorySet } from '../repositories/index.js';
 import { NotificationService } from '../services/NotificationService.js';
+import { TenantService } from '../services/TenantService.js';
 import type { NotificationFilters, NotificationTransaction } from '../types/Notification.js';
 import {
   readSelectedCsvColumns,
@@ -55,11 +56,13 @@ const positiveInt = (value: unknown, fallback: number, max: number) => {
 };
 
 export const createNotificationController = (repositories: RepositorySet) => {
+  const tenantService = new TenantService(repositories.tenantRepository);
   const service = new NotificationService(
     repositories.notificationRepository,
     repositories.userRepository,
     repositories.tenantRepository,
-    { enabled: false, provider: 'SEMAPHORE', send: async () => { throw new Error('Unavailable.'); } }
+    { enabled: false, provider: 'SEMAPHORE', send: async () => { throw new Error('Unavailable.'); } },
+    tenantService
   );
 
   return {

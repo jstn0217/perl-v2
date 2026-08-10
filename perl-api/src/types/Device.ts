@@ -6,6 +6,7 @@ export interface DeviceRecord {
   keyHash: string;
   keyLastFour: string;
   isActive: boolean;
+  lastSeenAt: string | null;
 }
 
 export interface DeviceView {
@@ -15,4 +16,5 @@ export interface DeviceView {
   location: string;
   keyLastFour: string;
   isActive: boolean;
+  lastSeenAt: string | null;
 }

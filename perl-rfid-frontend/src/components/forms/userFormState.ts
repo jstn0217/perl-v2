@@ -8,10 +8,13 @@ export type UserFormState = {
   role: SchoolUserRole;
   cardUid: string;
   gradeLevel: string;
+  schoolIdNumber: string;
   section: string;
   imageUrl: string;
   phoneNumber: string;
+  address: string;
   linkedStudentIds: string[];
+  linkedGuardianIds: string[];
 };
 
 export const createEmptyUserForm = (): UserFormState => ({
@@ -22,10 +25,13 @@ export const createEmptyUserForm = (): UserFormState => ({
   role: 'STAFF',
   cardUid: '',
   gradeLevel: '',
+  schoolIdNumber: '',
   section: '',
   imageUrl: '',
   phoneNumber: '',
-  linkedStudentIds: []
+  address: '',
+  linkedStudentIds: [],
+  linkedGuardianIds: []
 });
 
 export const toUserFormState = (user: ManagedUser): UserFormState => ({
@@ -36,8 +42,11 @@ export const toUserFormState = (user: ManagedUser): UserFormState => ({
   role: user.role,
   cardUid: user.cardUid ?? '',
   gradeLevel: user.gradeLevel ?? '',
+  schoolIdNumber: user.schoolIdNumber ?? '',
   section: user.section ?? '',
   imageUrl: user.imageUrl ?? '',
   phoneNumber: user.phoneNumber ?? '',
-  linkedStudentIds: user.linkedStudentIds
+  address: user.address ?? '',
+  linkedStudentIds: user.linkedStudentIds,
+  linkedGuardianIds: []
 });

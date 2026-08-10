@@ -34,6 +34,7 @@ const createTables = async () => {
       timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Manila',
       academic_year_label VARCHAR(64) NULL,
       deped_school_id VARCHAR(64) NULL,
+      features JSONB NOT NULL DEFAULT '{}',
       sort_order INT NOT NULL,
       created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
@@ -50,10 +51,12 @@ const createTables = async () => {
       role VARCHAR(20) NOT NULL,
       card_uid VARCHAR(255) NULL UNIQUE,
       grade_level VARCHAR(255) NULL,
+      student_id VARCHAR(255) NULL,
       section VARCHAR(255) NULL,
       image_url TEXT NULL,
       phone_number VARCHAR(32) NULL,
       linked_student_ids TEXT NULL,
+      address TEXT NULL,
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT fk_users_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE,
@@ -170,6 +173,9 @@ const createTables = async () => {
 
   await ensureColumn('users', 'linked_student_ids', 'TEXT NULL');
   await ensureColumn('users', 'phone_number', 'VARCHAR(32) NULL');
+  await ensureColumn('users', 'student_id', 'VARCHAR(255) NULL');
+  await ensureColumn('users', 'school_id_number', 'VARCHAR(255) NULL');
+  await ensureColumn('users', 'address', 'TEXT NULL');
   await ensureColumn('schools', 'sms_enabled', 'BOOLEAN NOT NULL DEFAULT FALSE');
   await ensureColumn('schools', 'sms_sender_name', 'VARCHAR(32) NULL');
   await ensureColumn('schools', 'address', 'TEXT NULL');
@@ -177,16 +183,30 @@ const createTables = async () => {
   await ensureColumn('schools', 'timezone', "VARCHAR(64) NOT NULL DEFAULT 'Asia/Manila'");
   await ensureColumn('schools', 'academic_year_label', 'VARCHAR(64) NULL');
   await ensureColumn('schools', 'deped_school_id', 'VARCHAR(64) NULL');
+  await ensureColumn('schools', 'features', "JSONB NOT NULL DEFAULT '{}'");
+  await pool.query(
+    `UPDATE schools SET features = jsonb_set(features, '{sms}', to_jsonb(sms_enabled)) WHERE NOT (features ? 'sms')`
+  );
+  await pool.query(
+    'UPDATE users SET school_id_number = student_id WHERE school_id_number IS NULL AND student_id IS NOT NULL'
+  );
   await ensureColumn('platform_users', 'role', "VARCHAR(20) NOT NULL DEFAULT 'SUPPORT'");
   await ensureColumn('audit_logs', 'actor_role', "VARCHAR(20) NOT NULL DEFAULT 'ADMIN'");
   await ensureColumn('audit_logs', 'support_initiated', 'BOOLEAN NOT NULL DEFAULT FALSE');
   await ensureColumn('audit_logs', 'change_summary', 'TEXT NULL');
+  await ensureColumn('devices', 'last_seen_at', 'TIMESTAMPTZ(3) NULL');
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_users_school ON users (school_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_users_school_role ON users (school_id, role)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_users_school_is_active ON users (school_id, is_active)');
   await pool.query(
     'CREATE INDEX IF NOT EXISTS idx_users_school_name ON users (school_id, last_name, first_name)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_users_school_student_id ON users (school_id, student_id)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_users_school_school_id_number ON users (school_id, school_id_number)'
   );
   await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school ON devices (school_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school_name ON devices (school_id, name)');
@@ -255,8 +275,8 @@ const insertSchools = async (client: PoolClient) => {
       `INSERT INTO schools (
         id, slug, name, logo_url, primary_color, secondary_color, accent_color,
         contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-        academic_year_label, deped_school_id, sort_order
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        academic_year_label, deped_school_id, features, sort_order
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
       [
         school.id,
         school.slug,
@@ -273,6 +293,7 @@ const insertSchools = async (client: PoolClient) => {
         school.timezone,
         school.academicYearLabel,
         school.depedSchoolId,
+        JSON.stringify(school.features),
         index + 1
       ]
     );
@@ -284,8 +305,8 @@ const insertUsers = async (client: PoolClient) => {
     await client.query(
       `INSERT INTO users (
         id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-        grade_level, section, image_url, phone_number, linked_student_ids, is_active
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         user.id,
         user.schoolId,
@@ -296,10 +317,12 @@ const insertUsers = async (client: PoolClient) => {
         user.role,
         user.cardUid,
         user.gradeLevel,
+        user.schoolIdNumber,
         user.section,
         user.imageUrl,
         user.phoneNumber ?? null,
         JSON.stringify(user.linkedStudentIds ?? []),
+        user.address,
         user.isActive
       ]
     );

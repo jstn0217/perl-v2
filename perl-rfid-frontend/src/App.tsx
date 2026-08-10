@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { GuardedRoute } from './components/GuardedRoute';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './modules/AppLayout';
+import { DeviceKioskPage } from './pages/DeviceKioskPage';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { appRoutes } from './routes';
@@ -13,6 +14,7 @@ const App = () => {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/device" element={<DeviceKioskPage />} />
       <Route
         path="/login"
         element={status === 'authenticated' ? <Navigate to="/dashboard" replace /> : <LoginPage />}

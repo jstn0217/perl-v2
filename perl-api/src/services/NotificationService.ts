@@ -3,6 +3,7 @@ import type { ISmsGateway } from '../notifications/index.js';
 import type { INotificationRepository } from '../repositories/interfaces/INotificationRepository.js';
 import type { ITenantRepository } from '../repositories/interfaces/ITenantRepository.js';
 import type { IUserRepository } from '../repositories/interfaces/IUserRepository.js';
+import { TenantService } from './TenantService.js';
 import type {
   NotificationFilters,
   NotificationPage,
@@ -23,7 +24,8 @@ export class NotificationService {
     private readonly notificationRepository: INotificationRepository,
     private readonly userRepository: IUserRepository,
     private readonly tenantRepository: ITenantRepository,
-    private readonly smsGateway: ISmsGateway
+    private readonly smsGateway: ISmsGateway,
+    private readonly tenantService: TenantService
   ) {}
 
   async queueStudentAttendance(
@@ -47,7 +49,8 @@ export class NotificationService {
         (user.linkedStudentIds ?? []).includes(student.id)
     );
 
-    if (!school.smsEnabled || !this.smsGateway.enabled) {
+    const smsFeatureEnabled = this.tenantService.isFeatureEnabled(school, 'sms');
+    if (!smsFeatureEnabled || !this.smsGateway.enabled) {
       await this.createSkipped(
         student,
         attendanceLogId,
@@ -55,7 +58,7 @@ export class NotificationService {
         message,
         null,
         null,
-        school.smsEnabled
+        smsFeatureEnabled
           ? 'SMS delivery is disabled in the system environment.'
           : 'The school SMS subscription is disabled.'
       );

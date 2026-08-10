@@ -124,18 +124,47 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
     const update = await request(app)
       .patch('/api/support/schools/school-golden/sms-settings')
       .set('Cookie', systemLogin.headers['set-cookie'][0])
-      .send({ smsEnabled: true, smsSenderName: 'GOLDEN' });
+      .send({ smsSenderName: 'GOLDEN' });
     const forbidden = await request(app)
       .patch('/api/support/schools/school-golden/sms-settings')
       .set('Cookie', supportLogin.headers['set-cookie'][0])
-      .send({ smsEnabled: false });
+      .send({ smsSenderName: 'BLOCKED' });
 
     expect(update.status).toBe(200);
     expect(update.body.school).toMatchObject({
-      smsEnabled: true,
       smsSenderName: 'GOLDEN'
     });
     expect(forbidden.status).toBe(403);
+  });
+
+  it('lets only system admins toggle school feature flags', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const systemLogin = await request(app).post('/api/auth/login').send({
+      email: 'system@perl.system',
+      password: 'SystemAdmin123!'
+    });
+    const supportLogin = await request(app).post('/api/auth/login').send({
+      email: 'support@perl.system',
+      password: 'Support123!'
+    });
+
+    const update = await request(app)
+      .patch('/api/support/schools/school-golden/features')
+      .set('Cookie', systemLogin.headers['set-cookie'][0])
+      .send({ featureKey: 'sms', enabled: true });
+    const forbidden = await request(app)
+      .patch('/api/support/schools/school-golden/features')
+      .set('Cookie', supportLogin.headers['set-cookie'][0])
+      .send({ featureKey: 'sms', enabled: false });
+    const invalidKey = await request(app)
+      .patch('/api/support/schools/school-golden/features')
+      .set('Cookie', systemLogin.headers['set-cookie'][0])
+      .send({ featureKey: 'not-a-feature', enabled: true });
+
+    expect(update.status).toBe(200);
+    expect(update.body.school.features).toMatchObject({ sms: true });
+    expect(forbidden.status).toBe(403);
+    expect(invalidKey.status).toBe(400);
   });
 
   it('marks every system-admin mutation as support initiated in the global action log', async () => {

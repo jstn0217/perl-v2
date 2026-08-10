@@ -29,7 +29,7 @@ export class DbUserRepository implements IUserRepository {
   ): Promise<UserRecord | null> {
     const { rows } = await getDbPool().query<UserRow>(
       `SELECT id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-              grade_level, section, image_url, phone_number, linked_student_ids, is_active
+              grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
        FROM users
        WHERE email = $1 ${options?.includeInactive ? '' : 'AND is_active = TRUE'}
        LIMIT 2`,
@@ -50,7 +50,7 @@ export class DbUserRepository implements IUserRepository {
   ): Promise<UserRecord | null> {
     const { rows } = await getDbPool().query<UserRow>(
       `SELECT id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-              grade_level, section, image_url, phone_number, linked_student_ids, is_active
+              grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
        FROM users
        WHERE email = $1 AND school_id = $2 ${options?.includeInactive ? '' : 'AND is_active = TRUE'}
        LIMIT 1`,
@@ -63,7 +63,7 @@ export class DbUserRepository implements IUserRepository {
   async findById(userId: string): Promise<UserRecord | null> {
     const { rows } = await getDbPool().query<UserRow>(
       `SELECT id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-              grade_level, section, image_url, phone_number, linked_student_ids, is_active
+              grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
        FROM users
        WHERE id = $1
        LIMIT 1`,
@@ -76,7 +76,7 @@ export class DbUserRepository implements IUserRepository {
   async findByCardUid(cardUid: string, options?: { includeInactive?: boolean }): Promise<UserRecord | null> {
     const { rows } = await getDbPool().query<UserRow>(
       `SELECT id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-              grade_level, section, image_url, phone_number, linked_student_ids, is_active
+              grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
        FROM users
        WHERE card_uid = $1 ${options?.includeInactive ? '' : 'AND is_active = TRUE'}
        LIMIT 1`,
@@ -89,7 +89,7 @@ export class DbUserRepository implements IUserRepository {
   async findStudentByCardUid(cardUid: string): Promise<UserRecord | null> {
     const { rows } = await getDbPool().query<UserRow>(
       `SELECT id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-              grade_level, section, image_url, phone_number, linked_student_ids, is_active
+              grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
        FROM users
        WHERE card_uid = $1 AND role = 'STUDENT' AND is_active = TRUE
        LIMIT 1`,
@@ -99,10 +99,27 @@ export class DbUserRepository implements IUserRepository {
     return rows[0] ? mapUserRow(rows[0]) : null;
   }
 
+  async findBySchoolIdNumber(
+    schoolId: string,
+    schoolIdNumber: string,
+    options?: { includeInactive?: boolean }
+  ): Promise<UserRecord | null> {
+    const { rows } = await getDbPool().query<UserRow>(
+      `SELECT id, school_id, email, password_hash, first_name, last_name, role, card_uid,
+              grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
+       FROM users
+       WHERE school_id = $1 AND school_id_number = $2 ${options?.includeInactive ? '' : 'AND is_active = TRUE'}
+       LIMIT 1`,
+      [schoolId, schoolIdNumber]
+    );
+
+    return rows[0] ? mapUserRow(rows[0]) : null;
+  }
+
   async listBySchool(schoolId: string): Promise<UserRecord[]> {
     const { rows } = await getDbPool().query<UserRow>(
       `SELECT id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-              grade_level, section, image_url, phone_number, linked_student_ids, is_active
+              grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
        FROM users
        WHERE school_id = $1
        ORDER BY created_at ASC, id ASC`,
@@ -144,7 +161,7 @@ export class DbUserRepository implements IUserRepository {
     const listParams = [...params, query.pageSize, (query.page - 1) * query.pageSize];
     const { rows } = await pool.query<UserRow>(
       `SELECT id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-              grade_level, section, image_url, phone_number, linked_student_ids, is_active
+              grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
        FROM users
        WHERE ${whereClause}
        ORDER BY ${orderClause}
@@ -164,8 +181,8 @@ export class DbUserRepository implements IUserRepository {
     await getDbPool().query(
       `INSERT INTO users (
         id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-        grade_level, section, image_url, phone_number, linked_student_ids, is_active
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         user.id,
         user.schoolId,
@@ -176,10 +193,12 @@ export class DbUserRepository implements IUserRepository {
         user.role,
         user.cardUid,
         user.gradeLevel,
+        user.schoolIdNumber,
         user.section,
         user.imageUrl,
         user.phoneNumber ?? null,
         JSON.stringify(user.linkedStudentIds ?? []),
+        user.address,
         user.isActive
       ]
     );
@@ -202,20 +221,23 @@ export class DbUserRepository implements IUserRepository {
       role: changes.role ?? existing.role,
       cardUid: changes.cardUid !== undefined ? changes.cardUid : existing.cardUid,
       gradeLevel: changes.gradeLevel !== undefined ? changes.gradeLevel : existing.gradeLevel,
+      schoolIdNumber: changes.schoolIdNumber !== undefined ? changes.schoolIdNumber : existing.schoolIdNumber,
       section: changes.section !== undefined ? changes.section : existing.section,
       imageUrl: changes.imageUrl !== undefined ? changes.imageUrl : existing.imageUrl,
       phoneNumber:
         changes.phoneNumber !== undefined ? changes.phoneNumber : existing.phoneNumber ?? null,
       linkedStudentIds:
         changes.linkedStudentIds !== undefined ? changes.linkedStudentIds : existing.linkedStudentIds ?? [],
+      address: changes.address !== undefined ? changes.address : existing.address,
       isActive: changes.isActive ?? existing.isActive
     };
 
     await getDbPool().query(
       `UPDATE users
        SET email = $1, password_hash = $2, first_name = $3, last_name = $4, role = $5, card_uid = $6,
-           grade_level = $7, section = $8, image_url = $9, phone_number = $10, linked_student_ids = $11, is_active = $12
-       WHERE id = $13 AND school_id = $14`,
+           grade_level = $7, school_id_number = $8, section = $9, image_url = $10, phone_number = $11,
+           linked_student_ids = $12, address = $13, is_active = $14
+       WHERE id = $15 AND school_id = $16`,
       [
         next.email.toLowerCase(),
         next.passwordHash,
@@ -224,10 +246,12 @@ export class DbUserRepository implements IUserRepository {
         next.role,
         next.cardUid,
         next.gradeLevel,
+        next.schoolIdNumber,
         next.section,
         next.imageUrl,
         next.phoneNumber,
         JSON.stringify(next.linkedStudentIds),
+        next.address,
         next.isActive,
         userId,
         schoolId

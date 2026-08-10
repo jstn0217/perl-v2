@@ -7,12 +7,18 @@ interface ExportColumnSelectorProps {
   columns: ExportColumnOption[];
   onChange: (columns: string[]) => void;
   selectedColumns: string[];
+  triggerLabel?: string;
+  heading?: string;
+  legend?: string;
 }
 
 export const ExportColumnSelector = ({
   columns,
   onChange,
-  selectedColumns
+  selectedColumns,
+  triggerLabel = 'Columns',
+  heading = 'Export columns',
+  legend = 'Columns to include in the CSV export'
 }: ExportColumnSelectorProps) => {
   const selected = new Set(selectedColumns);
   const allSelected = selectedColumns.length === columns.length;
@@ -20,12 +26,12 @@ export const ExportColumnSelector = ({
   return (
     <details className="export-columns">
       <summary>
-        Columns
+        {triggerLabel}
         <span aria-hidden="true">{selectedColumns.length}</span>
       </summary>
       <div className="export-columns__menu">
         <div className="export-columns__heading">
-          <strong>Export columns</strong>
+          <strong>{heading}</strong>
           <button
             className="text-button"
             type="button"
@@ -36,7 +42,7 @@ export const ExportColumnSelector = ({
           </button>
         </div>
         <fieldset>
-          <legend className="sr-only">Columns to include in the CSV export</legend>
+          <legend className="sr-only">{legend}</legend>
           {columns.map((column) => {
             const checked = selected.has(column.key);
             return (

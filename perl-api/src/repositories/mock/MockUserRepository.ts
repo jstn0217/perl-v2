@@ -84,6 +84,21 @@ export class MockUserRepository implements IUserRepository {
     );
   }
 
+  async findBySchoolIdNumber(
+    schoolId: string,
+    schoolIdNumber: string,
+    options?: { includeInactive?: boolean }
+  ): Promise<UserRecord | null> {
+    return (
+      mockUsers.find(
+        (user) =>
+          user.schoolId === schoolId &&
+          user.schoolIdNumber === schoolIdNumber &&
+          (options?.includeInactive ? true : user.isActive)
+      ) ?? null
+    );
+  }
+
   async listBySchool(schoolId: string): Promise<UserRecord[]> {
     return mockUsers.filter((user) => user.schoolId === schoolId);
   }

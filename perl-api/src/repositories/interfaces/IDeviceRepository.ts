@@ -18,4 +18,5 @@ export interface IDeviceRepository {
     changes: Pick<DeviceRecord, 'keyHash' | 'keyLastFour' | 'isActive'>
   ): Promise<DeviceRecord | null>;
   deleteBySchool(schoolId: string): Promise<number>;
+  touchLastSeen(deviceId: string): Promise<void>;
 }

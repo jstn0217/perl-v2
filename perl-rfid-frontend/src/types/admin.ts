@@ -13,7 +13,9 @@ export interface ManagedUser {
   role: SchoolUserRole;
   cardUid: string | null;
   gradeLevel: string | null;
+  schoolIdNumber: string | null;
   section: string | null;
+  address?: string | null;
   imageUrl: string | null;
   phoneNumber: string | null;
   linkedStudentIds: string[];
@@ -40,10 +42,13 @@ export interface ManagedUserCreatePayload {
   role: SchoolUserRole;
   cardUid?: string | null;
   gradeLevel?: string | null;
+  schoolIdNumber?: string | null;
   section?: string | null;
+  address?: string | null;
   imageUrl?: string | null;
   phoneNumber?: string | null;
   linkedStudentIds?: string[];
+  linkedGuardianIds?: string[];
 }
 
 export interface ManagedUserUpdatePayload {
@@ -54,10 +59,13 @@ export interface ManagedUserUpdatePayload {
   role?: SchoolUserRole;
   cardUid?: string | null;
   gradeLevel?: string | null;
+  schoolIdNumber?: string | null;
   section?: string | null;
+  address?: string | null;
   imageUrl?: string | null;
   phoneNumber?: string | null;
   linkedStudentIds?: string[];
+  linkedGuardianIds?: string[];
 }
 
 export interface ManagedUserImportPayload extends Omit<ManagedUserCreatePayload, 'linkedStudentIds'> {
@@ -76,6 +84,7 @@ export interface ManagedDevice {
   location: string;
   keyLastFour: string;
   isActive: boolean;
+  lastSeenAt: string | null;
 }
 
 export interface ManagedDeviceCreatePayload {

@@ -34,6 +34,7 @@ export const createMockSchools = (): SchoolProfile[] => [
     contactEmail: 'frontdesk@stmarys.edu',
     smsEnabled: true,
     smsSenderName: 'STMARYS',
+    features: { sms: true },
     address: '145 P. Burgos Street, Barangay Poblacion, Makati City, Metro Manila',
     phone: '(02) 8888-0145',
     timezone: 'Asia/Manila',
@@ -53,6 +54,7 @@ export const createMockSchools = (): SchoolProfile[] => [
     contactEmail: 'admin@riversidetech.edu',
     smsEnabled: true,
     smsSenderName: 'RIVERSIDE',
+    features: { sms: true },
     address: '88 Marcos Highway, Barangay San Roque, Antipolo City, Rizal',
     phone: '(02) 8722-9981',
     timezone: 'Asia/Manila',
@@ -72,6 +74,7 @@ export const createMockSchools = (): SchoolProfile[] => [
     contactEmail: 'office@goldenharvest.edu',
     smsEnabled: false,
     smsSenderName: 'GOLDEN',
+    features: { sms: false },
     address: '22 Osmena Boulevard, Barangay Lahug, Cebu City, Cebu',
     phone: '(032) 254-3367',
     timezone: 'Asia/Manila',
@@ -91,6 +94,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'ADMIN',
     cardUid: 'RFID-STMARYS-ADMIN',
     gradeLevel: null,
+    schoolIdNumber: null,
+    address: null,
     section: null,
     imageUrl: null,
     isActive: true
@@ -105,6 +110,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'STAFF',
     cardUid: 'RFID-STMARYS-STAFF',
     gradeLevel: null,
+    schoolIdNumber: null,
+    address: null,
     section: null,
     imageUrl: null,
     isActive: true
@@ -119,6 +126,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'STUDENT',
     cardUid: 'RFID-STMARYS-001',
     gradeLevel: 'Grade 10',
+    schoolIdNumber: null,
+    address: null,
     section: 'Emerald',
     imageUrl: null,
     isActive: true
@@ -133,6 +142,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'GUARDIAN',
     cardUid: null,
     gradeLevel: null,
+    schoolIdNumber: null,
+    address: null,
     section: null,
     imageUrl: null,
     phoneNumber: '09171234567',
@@ -149,6 +160,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'ADMIN',
     cardUid: 'RFID-RIVERSIDE-ADMIN',
     gradeLevel: null,
+    schoolIdNumber: null,
+    address: null,
     section: null,
     imageUrl: null,
     isActive: true
@@ -163,6 +176,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'STAFF',
     cardUid: 'RFID-RIVERSIDE-STAFF',
     gradeLevel: null,
+    schoolIdNumber: null,
+    address: null,
     section: null,
     imageUrl: null,
     isActive: true
@@ -177,6 +192,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'STUDENT',
     cardUid: 'RFID-RIVERSIDE-001',
     gradeLevel: 'Grade 11',
+    schoolIdNumber: null,
+    address: null,
     section: 'Circuit',
     imageUrl: null,
     isActive: true
@@ -191,6 +208,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'GUARDIAN',
     cardUid: null,
     gradeLevel: null,
+    schoolIdNumber: null,
+    address: null,
     section: null,
     imageUrl: null,
     phoneNumber: '09172345678',
@@ -207,6 +226,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'ADMIN',
     cardUid: 'RFID-GOLDEN-ADMIN',
     gradeLevel: null,
+    schoolIdNumber: null,
+    address: null,
     section: null,
     imageUrl: null,
     isActive: true
@@ -221,6 +242,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'STAFF',
     cardUid: 'RFID-GOLDEN-STAFF',
     gradeLevel: null,
+    schoolIdNumber: null,
+    address: null,
     section: null,
     imageUrl: null,
     isActive: true
@@ -235,6 +258,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'STUDENT',
     cardUid: 'RFID-GOLDEN-001',
     gradeLevel: 'Grade 9',
+    schoolIdNumber: null,
+    address: null,
     section: 'Sunrise',
     imageUrl: null,
     isActive: true
@@ -249,6 +274,8 @@ export const createMockUsers = (): UserRecord[] => [
     role: 'GUARDIAN',
     cardUid: null,
     gradeLevel: null,
+    schoolIdNumber: null,
+    address: null,
     section: null,
     imageUrl: null,
     phoneNumber: '09173456789',
@@ -300,7 +327,8 @@ export const createMockDevices = (): DeviceRecord[] => {
       location: 'Main gate',
       keyHash: hashDeviceKey(stMarysKey),
       keyLastFour: stMarysKey.slice(-4),
-      isActive: true
+      isActive: true,
+      lastSeenAt: null
     },
     {
       id: 'device-riverside-lobby',
@@ -309,7 +337,8 @@ export const createMockDevices = (): DeviceRecord[] => {
       location: 'Lobby',
       keyHash: hashDeviceKey(riversideKey),
       keyLastFour: riversideKey.slice(-4),
-      isActive: true
+      isActive: true,
+      lastSeenAt: null
     },
     {
       id: 'device-golden-gate',
@@ -318,7 +347,8 @@ export const createMockDevices = (): DeviceRecord[] => {
       location: 'Front gate',
       keyHash: hashDeviceKey(goldenKey),
       keyLastFour: goldenKey.slice(-4),
-      isActive: true
+      isActive: true,
+      lastSeenAt: null
     }
   ];
 };

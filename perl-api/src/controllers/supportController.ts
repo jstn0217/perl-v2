@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import type { RepositorySet } from '../repositories/index.js';
 import { AuditService } from '../services/AuditService.js';
 import { TenantService } from '../services/TenantService.js';
+import { SCHOOL_FEATURE_KEYS, type FeatureKey } from '../types/SchoolFeature.js';
 import { readAuditFilters, sendAuditCsv } from './auditQuery.js';
 
 const readPositiveInteger = (value: unknown, fallback: number, maximum: number) => {
@@ -45,14 +46,7 @@ export const createSupportController = (repositories: RepositorySet) => {
       const actor = req.currentUser;
       if (!actor) return res.status(401).json({ message: 'Authentication required.' });
       const schoolId = typeof req.params.schoolId === 'string' ? req.params.schoolId : '';
-      const { smsEnabled, smsSenderName } = req.body as {
-        smsEnabled?: unknown;
-        smsSenderName?: unknown;
-      };
-
-      if (typeof smsEnabled !== 'boolean') {
-        return res.status(400).json({ message: 'smsEnabled must be true or false.' });
-      }
+      const { smsSenderName } = req.body as { smsSenderName?: unknown };
 
       const senderName =
         typeof smsSenderName === 'string' && smsSenderName.trim()
@@ -65,7 +59,6 @@ export const createSupportController = (repositories: RepositorySet) => {
       }
 
       const school = await repositories.tenantRepository.updateSchoolProfile(schoolId, {
-        smsEnabled,
         smsSenderName: senderName
       });
       if (!school) return res.status(404).json({ message: 'School not found.' });
@@ -76,11 +69,40 @@ export const createSupportController = (repositories: RepositorySet) => {
         'SCHOOL_SMS_SETTINGS_UPDATED',
         'SCHOOL',
         school.id,
-        `${smsEnabled ? 'Enabled' : 'Disabled'} SMS subscription${
-          senderName ? ` with sender ${senderName}` : ''
-        }`
+        `Updated SMS sender name${senderName ? ` to ${senderName}` : ' (cleared)'}`
       );
       return res.json({ school });
+    },
+
+    async updateSchoolFeature(req: Request, res: Response) {
+      const actor = req.currentUser;
+      if (!actor) return res.status(401).json({ message: 'Authentication required.' });
+      const schoolId = typeof req.params.schoolId === 'string' ? req.params.schoolId : '';
+      const { featureKey, enabled } = req.body as { featureKey?: unknown; enabled?: unknown };
+
+      if (typeof featureKey !== 'string' || !SCHOOL_FEATURE_KEYS.includes(featureKey as FeatureKey)) {
+        return res.status(400).json({
+          message: `featureKey must be one of: ${SCHOOL_FEATURE_KEYS.join(', ')}.`
+        });
+      }
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: 'enabled must be true or false.' });
+      }
+
+      const updated = await tenantService
+        .setFeature(schoolId, featureKey as FeatureKey, enabled)
+        .catch(() => null);
+      if (!updated) return res.status(404).json({ message: 'School not found.' });
+
+      await auditService.record(
+        updated.id,
+        actor,
+        'SCHOOL_FEATURE_TOGGLED',
+        'SCHOOL',
+        updated.id,
+        `${enabled ? 'Enabled' : 'Disabled'} feature "${featureKey}"`
+      );
+      return res.json({ school: updated });
     },
 
     async listAuditLogs(req: Request, res: Response) {

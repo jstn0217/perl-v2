@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Download, Pencil, Upload, UserPlus, UserX } from 'lucide-react';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { InlineAlert } from '../components/InlineAlert';
 import { Modal } from '../components/Modal';
@@ -20,6 +21,7 @@ import { downloadCsvColumns, parseCsv, type CsvColumn } from '../lib/csv';
 import { canManageSchool } from '../lib/permissions';
 import { UserForm } from '../components/forms/UserForm';
 import { createEmptyUserForm, toUserFormState, type UserFormState } from '../components/forms/userFormState';
+import { ExportColumnSelector } from '../components/ExportColumnSelector';
 import type {
   ManagedUser,
   ManagedUserCreatePayload,
@@ -39,7 +41,9 @@ const importHeaders = [
   'role',
   'cardUid',
   'gradeLevel',
+  'schoolIdNumber',
   'section',
+  'address',
   'phoneNumber',
   'linkedStudentEmails'
 ] as const;
@@ -55,9 +59,41 @@ const defaultUserExportColumns = [
   'status',
   'cardUid',
   'gradeLevel',
+  'schoolIdNumber',
   'section',
   'phoneNumber',
   'linkedStudents'
+];
+
+type TableColumnKey =
+  | 'user'
+  | 'status'
+  | 'cardUid'
+  | 'schoolIdNumber'
+  | 'gradeLevel'
+  | 'section'
+  | 'phoneNumber'
+  | 'address'
+  | 'linkedStudents';
+
+const allTableColumns: { key: TableColumnKey; label: string }[] = [
+  { key: 'user', label: 'User' },
+  { key: 'status', label: 'Status' },
+  { key: 'cardUid', label: 'Card UID' },
+  { key: 'schoolIdNumber', label: 'School ID number' },
+  { key: 'gradeLevel', label: 'Grade level' },
+  { key: 'section', label: 'Section' },
+  { key: 'phoneNumber', label: 'Mobile number' },
+  { key: 'address', label: 'Address' },
+  { key: 'linkedStudents', label: 'Linked students' }
+];
+
+const defaultVisibleTableColumns: TableColumnKey[] = [
+  'user',
+  'status',
+  'cardUid',
+  'gradeLevel',
+  'section'
 ];
 
 const UserStatusPill = ({ user }: { user: ManagedUser }) => (
@@ -80,6 +116,7 @@ export const UserManagementPage = () => {
   });
 
   const [studentsDirectory, setStudentsDirectory] = useState<ManagedUser[]>([]);
+  const [guardiansDirectory, setGuardiansDirectory] = useState<ManagedUser[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving'>('idle');
@@ -102,6 +139,35 @@ export const UserManagementPage = () => {
 
   const [exporting, setExporting] = useState(false);
   const [selectedExportColumns, setSelectedExportColumns] = useState(defaultUserExportColumns);
+
+  const visibleColumnsStorageKey = `perl.people.visibleColumns.${activeSchool.id}`;
+  const loadVisibleTableColumns = (storageKey: string): TableColumnKey[] => {
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (!stored) return defaultVisibleTableColumns;
+      const parsed = JSON.parse(stored) as string[];
+      const valid = allTableColumns.map((column) => column.key);
+      const restored = parsed.filter((key): key is TableColumnKey => valid.includes(key as TableColumnKey));
+      return restored.length > 0 ? restored : defaultVisibleTableColumns;
+    } catch {
+      return defaultVisibleTableColumns;
+    }
+  };
+
+  const [visibleTableColumns, setVisibleTableColumns] = useState<TableColumnKey[]>(() =>
+    loadVisibleTableColumns(visibleColumnsStorageKey)
+  );
+  const [loadedColumnsKey, setLoadedColumnsKey] = useState(visibleColumnsStorageKey);
+
+  if (loadedColumnsKey !== visibleColumnsStorageKey) {
+    setLoadedColumnsKey(visibleColumnsStorageKey);
+    setVisibleTableColumns(loadVisibleTableColumns(visibleColumnsStorageKey));
+  }
+
+  const updateVisibleTableColumns = (columns: TableColumnKey[]) => {
+    setVisibleTableColumns(columns);
+    window.localStorage.setItem(visibleColumnsStorageKey, JSON.stringify(columns));
+  };
 
   const [deactivateTarget, setDeactivateTarget] = useState<ManagedUser | null>(null);
 
@@ -162,6 +228,30 @@ export const UserManagementPage = () => {
     };
   }, [activeSchool.id, reloadToken, sessionUser]);
 
+  useEffect(() => {
+    if (!sessionUser) return;
+    let cancelled = false;
+
+    void fetchAdminUsers(activeSchool.id, {
+      page: 1,
+      pageSize: 1,
+      sort: 'name',
+      dir: 'asc',
+      role: 'GUARDIAN',
+      all: true
+    })
+      .then((payload) => {
+        if (!cancelled) setGuardiansDirectory(payload.users);
+      })
+      .catch(() => {
+        if (!cancelled) setGuardiansDirectory([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSchool.id, reloadToken, sessionUser]);
+
   const selectedUser = useMemo(
     () => users.find((managedUser) => managedUser.id === selectedUserId) ?? null,
     [selectedUserId, users]
@@ -173,6 +263,50 @@ export const UserManagementPage = () => {
         studentsDirectory.map((student) => [student.id, `${student.firstName} ${student.lastName}`])
       ),
     [studentsDirectory]
+  );
+
+  const guardianAddressByStudentId = useMemo(() => {
+    const fallbacks = new Map<string, string>();
+    for (const guardian of guardiansDirectory) {
+      if (!guardian.address) continue;
+      for (const studentId of guardian.linkedStudentIds) {
+        if (!fallbacks.has(studentId)) {
+          fallbacks.set(studentId, guardian.address);
+        }
+      }
+    }
+    return fallbacks;
+  }, [guardiansDirectory]);
+
+  const studentAddressByGuardianId = useMemo(() => {
+    const fallbacks = new Map<string, string>();
+    const studentsById = new Map(studentsDirectory.map((student) => [student.id, student]));
+    for (const guardian of guardiansDirectory) {
+      for (const studentId of guardian.linkedStudentIds) {
+        const student = studentsById.get(studentId);
+        if (student?.address) {
+          fallbacks.set(guardian.id, student.address);
+          break;
+        }
+      }
+    }
+    return fallbacks;
+  }, [guardiansDirectory, studentsDirectory]);
+
+  const resolveAddressValue = useCallback(
+    (managedUser: ManagedUser): { text: string; fallbackTag: 'guardian' | 'student' | null } => {
+      if (managedUser.address) return { text: managedUser.address, fallbackTag: null };
+      if (managedUser.role === 'STUDENT') {
+        const guardianAddress = guardianAddressByStudentId.get(managedUser.id);
+        if (guardianAddress) return { text: guardianAddress, fallbackTag: 'guardian' };
+      }
+      if (managedUser.role === 'GUARDIAN') {
+        const studentAddress = studentAddressByGuardianId.get(managedUser.id);
+        if (studentAddress) return { text: studentAddress, fallbackTag: 'student' };
+      }
+      return { text: '', fallbackTag: null };
+    },
+    [guardianAddressByStudentId, studentAddressByGuardianId]
   );
 
   const userExportColumns = useMemo<CsvColumn<ManagedUser>[]>(
@@ -192,8 +326,18 @@ export const UserManagementPage = () => {
         label: 'Grade level',
         value: (managedUser) => managedUser.gradeLevel ?? ''
       },
+      { key: 'schoolIdNumber', label: 'School ID number', value: (managedUser) => managedUser.schoolIdNumber ?? '' },
       { key: 'section', label: 'Section', value: (managedUser) => managedUser.section ?? '' },
       { key: 'phoneNumber', label: 'Mobile number', value: (managedUser) => managedUser.phoneNumber ?? '' },
+      {
+        key: 'address',
+        label: 'Address',
+        value: (managedUser) => {
+          const { text, fallbackTag } = resolveAddressValue(managedUser);
+          if (!text) return '';
+          return fallbackTag ? `${text} (${fallbackTag})` : text;
+        }
+      },
       {
         key: 'linkedStudents',
         label: 'Linked students',
@@ -203,8 +347,71 @@ export const UserManagementPage = () => {
             .join('; ')
       }
     ],
-    [studentNames]
+    [studentNames, resolveAddressValue]
   );
+
+  const availableTableColumns = allTableColumns.filter((column) => column.key !== 'user' || canEdit);
+  const visibleTableColumnSet = new Set(visibleTableColumns);
+  const shownTableColumns = availableTableColumns.filter((column) => visibleTableColumnSet.has(column.key));
+  const rowColumnCount = shownTableColumns.length + (canEdit ? 1 : 0);
+
+  const renderTableCell = (managedUser: ManagedUser, key: TableColumnKey) => {
+    switch (key) {
+      case 'user':
+        return (
+          <div className="user-identity">
+            {managedUser.imageUrl ? (
+              <img src={managedUser.imageUrl} alt="" className="user-avatar" loading="lazy" />
+            ) : (
+              <span className="user-avatar user-avatar--fallback" aria-hidden="true">
+                {managedUser.firstName.slice(0, 1)}{managedUser.lastName.slice(0, 1)}
+              </span>
+            )}
+            <div>
+              <strong>{managedUser.firstName} {managedUser.lastName}</strong>
+              <p>{managedUser.email}</p>
+            </div>
+          </div>
+        );
+      case 'status':
+        return <UserStatusPill user={managedUser} />;
+      case 'cardUid':
+        return managedUser.cardUid ?? '—';
+      case 'schoolIdNumber':
+        return managedUser.schoolIdNumber ?? '—';
+      case 'gradeLevel':
+        return managedUser.gradeLevel ?? '—';
+      case 'section':
+        return managedUser.section ?? '—';
+      case 'phoneNumber':
+        return managedUser.phoneNumber ?? '—';
+      case 'address': {
+        const { text, fallbackTag } = resolveAddressValue(managedUser);
+        if (!text) return '—';
+        if (!fallbackTag) return text;
+        const title =
+          fallbackTag === 'guardian'
+            ? "Shown from a linked guardian's address"
+            : "Shown from a linked student's address";
+        return (
+          <span className="inherited-value">
+            {text}{' '}
+            <span className="inherited-value__tag" title={title}>
+              ({fallbackTag})
+            </span>
+          </span>
+        );
+      }
+      case 'linkedStudents':
+        return managedUser.role === 'GUARDIAN'
+          ? managedUser.linkedStudentIds
+              .map((studentId) => studentNames.get(studentId) ?? studentId)
+              .join(', ') || 'No students linked'
+          : '—';
+      default:
+        return null;
+    }
+  };
 
   if (!sessionUser) {
     return null;
@@ -244,6 +451,11 @@ export const UserManagementPage = () => {
 
   const openEditor = (managedUser: ManagedUser) => {
     const initial = toUserFormState(managedUser);
+    if (managedUser.role === 'STUDENT') {
+      initial.linkedGuardianIds = guardiansDirectory
+        .filter((guardian) => guardian.linkedStudentIds.includes(managedUser.id))
+        .map((guardian) => guardian.id);
+    }
     setEditorMode('edit');
     setSelectedUserId(managedUser.id);
     setFormState(initial);
@@ -278,10 +490,13 @@ export const UserManagementPage = () => {
           role: formState.role,
           cardUid: normalizeOptionalField(formState.cardUid),
           gradeLevel: normalizeOptionalField(formState.gradeLevel),
+          schoolIdNumber: normalizeOptionalField(formState.schoolIdNumber),
           section: normalizeOptionalField(formState.section),
           imageUrl: normalizeOptionalField(formState.imageUrl),
           phoneNumber: normalizeOptionalField(formState.phoneNumber),
-          linkedStudentIds: formState.linkedStudentIds
+          address: normalizeOptionalField(formState.address),
+          linkedStudentIds: formState.linkedStudentIds,
+          linkedGuardianIds: formState.role === 'STUDENT' ? formState.linkedGuardianIds : undefined
         };
 
         let createdUser = await createAdminUser(activeSchool.id, payload);
@@ -303,10 +518,13 @@ export const UserManagementPage = () => {
           role: formState.role,
           cardUid: normalizeOptionalField(formState.cardUid),
           gradeLevel: normalizeOptionalField(formState.gradeLevel),
+          schoolIdNumber: normalizeOptionalField(formState.schoolIdNumber),
           section: normalizeOptionalField(formState.section),
           imageUrl: normalizeOptionalField(formState.imageUrl),
           phoneNumber: normalizeOptionalField(formState.phoneNumber),
-          linkedStudentIds: formState.linkedStudentIds
+          address: normalizeOptionalField(formState.address),
+          linkedStudentIds: formState.linkedStudentIds,
+          linkedGuardianIds: formState.role === 'STUDENT' ? formState.linkedGuardianIds : undefined
         };
 
         if (formState.password.trim()) {
@@ -399,7 +617,9 @@ export const UserManagementPage = () => {
         role: read(row, 'role').toUpperCase() as SchoolUserRole,
         cardUid: read(row, 'cardUid') || null,
         gradeLevel: read(row, 'gradeLevel') || null,
+        schoolIdNumber: read(row, 'schoolIdNumber') || null,
         section: read(row, 'section') || null,
+        address: read(row, 'address') || null,
         phoneNumber: read(row, 'phoneNumber') || null,
         linkedStudentEmails: read(row, 'linkedStudentEmails')
           .split(';')
@@ -500,9 +720,11 @@ export const UserManagementPage = () => {
                   setImportOpen(true);
                 }}
               >
+                <Upload size={16} aria-hidden="true" />
                 Import CSV
               </button>
               <button className="secondary-button" type="button" onClick={openNewUser}>
+                <UserPlus size={16} aria-hidden="true" />
                 New user
               </button>
             </div> : (
@@ -553,13 +775,24 @@ export const UserManagementPage = () => {
             </label>
           </ListToolbar>
 
+          <div className="table-column-controls">
+            <ExportColumnSelector
+              columns={availableTableColumns}
+              onChange={(keys) => updateVisibleTableColumns(keys as TableColumnKey[])}
+              selectedColumns={visibleTableColumns}
+              triggerLabel="Shown columns"
+              heading="Table columns"
+              legend="Columns shown in the roster table below"
+            />
+          </div>
+
           <div className="table-wrap">
             <table className="attendance-table">
               <thead>
                 <tr>
-                  <th scope="col">User</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Attendance data</th>
+                  {shownTableColumns.map((column) => (
+                    <th key={column.key} scope="col">{column.label}</th>
+                  ))}
                   {canEdit ? <th scope="col">Actions</th> : null}
                 </tr>
               </thead>
@@ -567,14 +800,14 @@ export const UserManagementPage = () => {
                 {listStatus === 'loading' ? (
                   Array.from({ length: 5 }).map((_, index) => (
                     <tr key={`user-skeleton-${index}`}>
-                      <td colSpan={canEdit ? 4 : 3}>
+                      <td colSpan={rowColumnCount}>
                         <div className="table-skeleton" />
                       </td>
                     </tr>
                   ))
                 ) : listStatus === 'error' ? (
                   <tr>
-                    <td colSpan={canEdit ? 4 : 3}>
+                    <td colSpan={rowColumnCount}>
                       <div className="empty-state empty-state--error" role="alert">
                         <h3>Unable to load the roster</h3>
                         <p>{listError ?? 'Try again in a moment.'}</p>
@@ -583,7 +816,7 @@ export const UserManagementPage = () => {
                   </tr>
                 ) : users.length === 0 ? (
                   <tr>
-                    <td colSpan={canEdit ? 4 : 3}>
+                    <td colSpan={rowColumnCount}>
                       <div className="empty-state">
                         <h3>{query.activeFilterCount > 0 ? 'No matching people' : 'No users found'}</h3>
                         <p>
@@ -597,73 +830,34 @@ export const UserManagementPage = () => {
                 ) : (
                   users.map((managedUser) => (
                     <tr key={managedUser.id}>
-                      {canEdit ? <td data-label="User">
-                        <div className="user-identity">
-                          {managedUser.imageUrl ? (
-                            <img
-                              src={managedUser.imageUrl}
-                              alt=""
-                              className="user-avatar"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <span className="user-avatar user-avatar--fallback" aria-hidden="true">
-                              {managedUser.firstName.slice(0, 1)}{managedUser.lastName.slice(0, 1)}
-                            </span>
-                          )}
-                          <div>
-                            <strong>{managedUser.firstName} {managedUser.lastName}</strong>
-                            <p>{managedUser.email}</p>
+                      {shownTableColumns.map((column) => (
+                        <td key={column.key} data-label={column.label}>
+                          {renderTableCell(managedUser, column.key)}
+                        </td>
+                      ))}
+                      {canEdit ? (
+                        <td data-label="Actions">
+                          <div className="table-actions">
+                            <button
+                              className="secondary-button"
+                              type="button"
+                              onClick={() => openEditor(managedUser)}
+                            >
+                              <Pencil size={16} aria-hidden="true" />
+                              Edit
+                            </button>
+                            <button
+                              className="secondary-button secondary-button--danger"
+                              type="button"
+                              disabled={!managedUser.isActive || managedUser.id === sessionUser.id}
+                              onClick={() => setDeactivateTarget(managedUser)}
+                            >
+                              <UserX size={16} aria-hidden="true" />
+                              Deactivate
+                            </button>
                           </div>
-                        </div>
-                      </td> : null}
-                      <td data-label="Status">
-                        <UserStatusPill user={managedUser} />
-                      </td>
-                      <td data-label="Attendance data">
-                        <div>
-                          {managedUser.role === 'GUARDIAN' ? (
-                            <>
-                              <strong>
-                                {managedUser.linkedStudentIds.length} linked student
-                                {managedUser.linkedStudentIds.length === 1 ? '' : 's'}
-                              </strong>
-                              <p>
-                                {managedUser.linkedStudentIds
-                                  .map((studentId) => studentNames.get(studentId) ?? studentId)
-                                  .join(', ') || 'No students linked'}
-                              </p>
-                            </>
-                          ) : (
-                            <>
-                              <strong>{managedUser.cardUid ?? 'No card assigned'}</strong>
-                              <p>
-                                {managedUser.gradeLevel ?? 'No grade'}
-                                {managedUser.section ? ` • ${managedUser.section}` : ''}
-                              </p>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                      <td data-label="Actions">
-                        <div className="table-actions">
-                          <button
-                            className="secondary-button"
-                            type="button"
-                            onClick={() => openEditor(managedUser)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="secondary-button secondary-button--danger"
-                            type="button"
-                            disabled={!managedUser.isActive || managedUser.id === sessionUser.id}
-                            onClick={() => setDeactivateTarget(managedUser)}
-                          >
-                            Deactivate
-                          </button>
-                        </div>
-                      </td>
+                        </td>
+                      ) : null}
                     </tr>
                   ))
                 )}
@@ -708,6 +902,7 @@ export const UserManagementPage = () => {
               href="/templates/people-import-template.csv"
               download
             >
+              <Download size={16} aria-hidden="true" />
               Download template
             </a>
           </div>
@@ -782,6 +977,7 @@ export const UserManagementPage = () => {
           onSubmit={handleSubmit}
           saving={saveStatus === 'saving'}
           students={studentsDirectory}
+          guardians={guardiansDirectory}
           value={formState}
         />
       </Modal>

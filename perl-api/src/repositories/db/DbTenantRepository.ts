@@ -9,9 +9,9 @@ export class DbTenantRepository implements ITenantRepository {
       `INSERT INTO schools (
         id, slug, name, logo_url, primary_color, secondary_color, accent_color,
         contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-        academic_year_label, deped_school_id, sort_order
+        academic_year_label, deped_school_id, features, sort_order
       )
-      SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE(MAX(sort_order), 0) + 1
+      SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE(MAX(sort_order), 0) + 1
       FROM schools`,
       [
         school.id,
@@ -28,7 +28,8 @@ export class DbTenantRepository implements ITenantRepository {
         school.phone,
         school.timezone,
         school.academicYearLabel,
-        school.depedSchoolId
+        school.depedSchoolId,
+        JSON.stringify(school.features)
       ]
     );
 
@@ -39,7 +40,7 @@ export class DbTenantRepository implements ITenantRepository {
     const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
               contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-              academic_year_label, deped_school_id
+              academic_year_label, deped_school_id, features
        FROM schools
        WHERE id = $1
        LIMIT 1`,
@@ -53,7 +54,7 @@ export class DbTenantRepository implements ITenantRepository {
     const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
               contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-              academic_year_label, deped_school_id
+              academic_year_label, deped_school_id, features
        FROM schools
        WHERE slug = $1
        LIMIT 1`,
@@ -67,7 +68,7 @@ export class DbTenantRepository implements ITenantRepository {
     const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
               contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-              academic_year_label, deped_school_id
+              academic_year_label, deped_school_id, features
        FROM schools
        ORDER BY sort_order ASC, created_at ASC
        LIMIT 1`
@@ -84,7 +85,7 @@ export class DbTenantRepository implements ITenantRepository {
     const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
               contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-              academic_year_label, deped_school_id
+              academic_year_label, deped_school_id, features
        FROM schools
        ORDER BY sort_order ASC, created_at ASC`
     );
@@ -119,15 +120,16 @@ export class DbTenantRepository implements ITenantRepository {
       academicYearLabel:
         changes.academicYearLabel !== undefined ? changes.academicYearLabel : school.academicYearLabel,
       depedSchoolId:
-        changes.depedSchoolId !== undefined ? changes.depedSchoolId : school.depedSchoolId
+        changes.depedSchoolId !== undefined ? changes.depedSchoolId : school.depedSchoolId,
+      features: changes.features ? { ...school.features, ...changes.features } : school.features
     };
 
     await getDbPool().query(
       `UPDATE schools
        SET name = $1, logo_url = $2, contact_email = $3, primary_color = $4, secondary_color = $5,
            accent_color = $6, sms_enabled = $7, sms_sender_name = $8, address = $9, phone = $10,
-           timezone = $11, academic_year_label = $12, deped_school_id = $13
-       WHERE id = $14`,
+           timezone = $11, academic_year_label = $12, deped_school_id = $13, features = $14
+       WHERE id = $15`,
       [
         next.name,
         next.logoUrl,
@@ -142,6 +144,7 @@ export class DbTenantRepository implements ITenantRepository {
         next.timezone,
         next.academicYearLabel,
         next.depedSchoolId,
+        JSON.stringify(next.features),
         schoolId
       ]
     );

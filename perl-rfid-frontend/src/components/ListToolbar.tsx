@@ -1,4 +1,5 @@
 import type { PropsWithChildren } from 'react';
+import { Download } from 'lucide-react';
 import {
   ExportColumnSelector,
   type ExportColumnOption
@@ -69,6 +70,7 @@ export const ListToolbar = ({
           onClick={onExport}
           disabled={exportDisabled}
         >
+          <Download size={16} aria-hidden="true" />
           Export {activeFilterCount > 0 ? 'filtered' : 'all'} CSV
         </button>
       </div>

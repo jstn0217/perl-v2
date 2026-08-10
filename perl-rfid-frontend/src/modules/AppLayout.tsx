@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Menu } from 'lucide-react';
 import { Outlet } from 'react-router-dom';
 import { AccountMenu } from '../components/AccountMenu';
 import { OfflineBanner } from '../components/OfflineBanner';
@@ -40,73 +41,76 @@ export const AppLayout = () => {
   return (
     <main className="dashboard-shell">
       <OfflineBanner />
-      <section className="dashboard-frame">
-        <header className="dashboard-header">
-          <div className="brand-lockup">
-            <SchoolMark name={school.name} logoUrl={school.logoUrl} compact />
-            <div>
-              <p className="eyebrow">PERL attendance</p>
-              <h1>{school.name}</h1>
-            </div>
-          </div>
+      <div className="app-body">
+        <section className="dashboard-frame">
+          <header className="dashboard-header">
+            <div className="dashboard-header__start">
+              <button
+                className="menu-button app-drawer-toggle"
+                type="button"
+                aria-expanded={menuOpen}
+                aria-label="Open navigation"
+                onClick={() => setMenuOpen(true)}
+              >
+                <Menu className="menu-button__icon" size={20} aria-hidden="true" />
+                <span className="menu-button__label">Menu</span>
+              </button>
 
-          <div className="dashboard-actions">
-            {isPlatformUser(user?.role) ? (
-              <div className="support-context">
-                <label className="support-context__field">
-                  <span>Support context</span>
-                  <select
-                    value={activeSchool.slug}
-                    onChange={(event) => {
-                      const selected = schools.find(
-                        (availableSchool) => availableSchool.slug === event.target.value
-                      );
-                      if (!selected) return;
-                      setSupportContextError(null);
-                      void enterSupportSchool(selected.id)
-                        .then(() => setActiveSchoolSlug(selected.slug))
-                        .catch((error) =>
-                          setSupportContextError(
-                            error instanceof Error ? error.message : 'Unable to change support context.'
-                          )
-                        );
-                    }}
-                    aria-label="Select school support context"
-                  >
-                    {schools.map((availableSchool) => (
-                      <option key={availableSchool.id} value={availableSchool.slug}>
-                        {availableSchool.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {supportContextError ? (
-                  <span className="support-context-error" role="alert">{supportContextError}</span>
-                ) : null}
+              <div className="brand-lockup">
+                <SchoolMark name={school.name} logoUrl={school.logoUrl} compact />
+                <h1>{school.name}</h1>
               </div>
-            ) : null}
-            {user ? <AccountMenu user={user} roleLabel={roleLabel} onSignOut={() => void logout()} /> : null}
-            <button
-              className="menu-button"
-              type="button"
-              aria-expanded={menuOpen}
-              aria-label="Open navigation"
-              onClick={() => setMenuOpen(true)}
-            >
-              <span className="menu-button__icon" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-              </span>
-              Menu
-            </button>
-          </div>
-        </header>
+            </div>
 
-        <div className="dashboard-content">
-          <Outlet />
-        </div>
-      </section>
+            <div className="dashboard-actions">
+              {isPlatformUser(user?.role) ? (
+                <div className="support-context">
+                  <label className="support-context__field">
+                    <span>Support context</span>
+                    <select
+                      value={activeSchool.slug}
+                      onChange={(event) => {
+                        const selected = schools.find(
+                          (availableSchool) => availableSchool.slug === event.target.value
+                        );
+                        if (!selected) return;
+                        setSupportContextError(null);
+                        void enterSupportSchool(selected.id)
+                          .then(() => setActiveSchoolSlug(selected.slug))
+                          .catch((error) =>
+                            setSupportContextError(
+                              error instanceof Error ? error.message : 'Unable to change support context.'
+                            )
+                          );
+                      }}
+                      aria-label="Select school support context"
+                    >
+                      {schools.map((availableSchool) => (
+                        <option key={availableSchool.id} value={availableSchool.slug}>
+                          {availableSchool.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {supportContextError ? (
+                    <span className="support-context-error" role="alert">{supportContextError}</span>
+                  ) : null}
+                </div>
+              ) : null}
+              {user ? <AccountMenu user={user} roleLabel={roleLabel} onSignOut={() => void logout()} /> : null}
+            </div>
+          </header>
+
+          <div className="dashboard-content">
+            <Outlet />
+          </div>
+
+          <footer className="app-footer">
+            <img src="/brand/perl-mark-96.png" alt="" width="20" height="17" aria-hidden="true" />
+            <span>Powered by PERL</span>
+          </footer>
+        </section>
+      </div>
 
       <AppNavigationDrawer
         open={menuOpen}

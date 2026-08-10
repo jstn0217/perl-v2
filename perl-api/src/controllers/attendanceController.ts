@@ -124,11 +124,13 @@ export const createAttendanceController = (
   repositories: RepositorySet,
   smsGateway: ISmsGateway
 ) => {
+  const tenantService = new TenantService(repositories.tenantRepository);
   const notificationService = new NotificationService(
     repositories.notificationRepository,
     repositories.userRepository,
     repositories.tenantRepository,
-    smsGateway
+    smsGateway,
+    tenantService
   );
   const attendanceService = new AttendanceService(
     repositories.attendanceRepository,
@@ -139,7 +141,6 @@ export const createAttendanceController = (
   );
   const auditService = new AuditService(repositories.auditRepository);
   const deviceService = new DeviceService(repositories.deviceRepository);
-  const tenantService = new TenantService(repositories.tenantRepository);
 
   const resolveAuthorizedSchoolId = async (req: Request) => {
     const currentUser = req.currentUser;
@@ -232,6 +233,28 @@ export const createAttendanceController = (
         const status = message === 'Invalid device key.' ? 401 : 400;
 
         return res.status(status).json({ message });
+      }
+    },
+
+    async connectDevice(req: Request, res: Response) {
+      const { deviceKey } = req.body as { deviceKey?: string };
+
+      if (!deviceKey) {
+        return res.status(400).json({ message: 'deviceKey is required.' });
+      }
+
+      try {
+        const device = await deviceService.authenticateDeviceKey(deviceKey);
+
+        return res.status(200).json({
+          device: {
+            id: device.id,
+            name: device.name,
+            location: device.location
+          }
+        });
+      } catch {
+        return res.status(401).json({ message: 'Invalid device key.' });
       }
     },
 

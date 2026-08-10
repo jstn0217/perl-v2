@@ -62,7 +62,7 @@ body {
 .eyebrow {
   margin: 0 0 12px;
   font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--school-primary) 74%, black);
@@ -109,7 +109,7 @@ body {
   place-items: center;
   background: var(--school-primary);
   color: white;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 1.5rem;
 }
 
@@ -132,7 +132,7 @@ body {
 .school-switcher span,
 .panel-label {
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--school-primary) 72%, black);
@@ -338,13 +338,22 @@ body {
 
 .primary-button,
 .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 0;
   border-radius: 14px;
   padding: 14px 18px;
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.primary-button svg,
+.secondary-button svg {
+  flex: 0 0 auto;
 }
 
 .primary-button {
@@ -392,6 +401,13 @@ body {
   box-shadow: 0 10px 22px rgba(17, 32, 51, 0.08);
 }
 
+.app-body {
+  width: 100%;
+  max-width: 1320px;
+  min-width: 0;
+  margin-inline: auto;
+}
+
 .dashboard-frame {
   width: 100%;
   max-width: 1240px;
@@ -402,15 +418,36 @@ body {
 
 .dashboard-header {
   display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  align-items: center;
-  padding: 20px 24px;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
   border-radius: 20px;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--school-primary) 10%, white) 0%, rgba(255, 255, 255, 0.94) 36%),
     rgba(255, 255, 255, 0.88);
   box-shadow: 0 22px 42px rgba(17, 32, 51, 0.1);
+}
+
+.dashboard-header__start {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.dashboard-header__start .brand-lockup {
+  width: auto;
+  min-width: 0;
+  gap: 12px;
+  flex: 1 1 auto;
+}
+
+.dashboard-header__start .brand-lockup h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.15rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .dashboard-actions {
@@ -425,30 +462,51 @@ body {
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid color-mix(in srgb, var(--school-primary) 12%, white);
+  padding: 0 10px;
+  border: 0;
   border-radius: 12px;
-  background: white;
+  background: transparent;
   color: var(--ink-strong);
-  box-shadow: 0 8px 18px rgba(17, 32, 51, 0.07);
   font: inherit;
   font-size: 0.88rem;
-  font-weight: 800;
+  font-weight: 600;
   cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.menu-button:hover {
+  background: color-mix(in srgb, var(--school-secondary) 62%, white);
+}
+
+.menu-button__label {
+  display: none;
+  white-space: nowrap;
+}
+
+/* Tablet and up: header returns to a single row and buttons show their text label. */
+@media (min-width: 640px) {
+  .dashboard-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+  }
+
+  .dashboard-header__start .brand-lockup h1 {
+    font-size: 1.4rem;
+  }
+
+  .menu-button {
+    padding-inline: 14px;
+  }
+
+  .menu-button__label {
+    display: inline;
+  }
 }
 
 .menu-button__icon {
-  display: grid;
-  gap: 4px;
-  width: 18px;
-}
-
-.menu-button__icon i {
-  display: block;
-  width: 100%;
-  height: 2px;
-  border-radius: 2px;
-  background: currentColor;
+  flex: 0 0 auto;
 }
 
 .modal {
@@ -521,9 +579,6 @@ body {
   border-radius: 12px;
   background: color-mix(in srgb, var(--school-secondary) 66%, white);
   color: var(--ink-strong);
-  font: inherit;
-  font-size: 1.65rem;
-  line-height: 1;
   cursor: pointer;
 }
 
@@ -554,12 +609,28 @@ body {
 }
 
 .modal--drawer {
-  width: min(400px, calc(100vw - 20px));
+  width: min(320px, calc(100vw - 20px));
   height: calc(100vh - 20px);
   height: calc(100dvh - 20px);
   max-height: none;
-  margin: 10px 10px 10px auto;
-  border-radius: 20px;
+  margin: 10px auto 10px 10px;
+  border-radius: 16px;
+}
+
+.modal--drawer[open] {
+  animation: drawer-slide-in 220ms ease;
+}
+
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(-16px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .modal--drawer .modal__surface {
@@ -583,7 +654,7 @@ body {
   margin: 20px 12px 6px;
   color: var(--ink-soft);
   font-size: 0.74rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -595,12 +666,18 @@ body {
 .app-drawer-nav a {
   display: flex;
   align-items: center;
+  gap: 12px;
   min-height: 48px;
   padding-inline: 14px;
   border-radius: 12px;
   color: var(--ink-strong);
   text-decoration: none;
-  font-weight: 750;
+  font-weight: 600;
+}
+
+.app-drawer-nav__icon {
+  flex: 0 0 auto;
+  color: var(--ink-soft);
 }
 
 .app-drawer-nav a:hover {
@@ -610,7 +687,10 @@ body {
 .app-drawer-nav a[aria-current="page"] {
   background: var(--school-primary);
   color: white;
-  box-shadow: 0 10px 22px color-mix(in srgb, var(--school-primary) 20%, transparent);
+}
+
+.app-drawer-nav a[aria-current="page"] .app-drawer-nav__icon {
+  color: white;
 }
 
 .app-drawer-signout {
@@ -649,7 +729,7 @@ body {
   color: var(--ink-strong);
   font: inherit;
   font-size: 0.84rem;
-  font-weight: 750;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -691,7 +771,7 @@ body {
   background: var(--school-primary);
   color: white;
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.04em;
 }
 
@@ -724,8 +804,18 @@ body {
   display: none;
 }
 
+.user-chip__chevron {
+  flex: 0 0 auto;
+  color: var(--ink-soft);
+  transition: transform 160ms ease;
+}
+
+.account-menu[open] .user-chip__chevron {
+  transform: rotate(180deg);
+}
+
 .account-menu summary.user-chip:hover {
-  background: color-mix(in srgb, var(--school-secondary) 88%, white);
+  background: color-mix(in srgb, var(--school-secondary) 62%, white);
 }
 
 .account-menu summary.user-chip:focus-visible {
@@ -758,7 +848,7 @@ body {
   background: transparent;
   color: var(--ink-strong);
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -785,7 +875,7 @@ body {
   color: var(--ink-strong);
   font: inherit;
   font-size: 0.86rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -819,7 +909,7 @@ body {
   margin: 0 8px;
   color: var(--ink-soft);
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .dashboard-nav a {
@@ -831,7 +921,7 @@ body {
   color: var(--ink-strong);
   text-decoration: none;
   font-size: 0.88rem;
-  font-weight: 650;
+  font-weight: 500;
   white-space: nowrap;
   transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
@@ -848,6 +938,17 @@ body {
 
 .dashboard-content {
   min-width: 0;
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid color-mix(in srgb, var(--school-primary) 12%, white);
+  box-shadow: 0 18px 36px rgba(17, 32, 51, 0.08);
+}
+
+@media (min-width: 640px) {
+  .dashboard-content {
+    padding: 24px;
+  }
 }
 
 .dashboard-grid {
@@ -1008,7 +1109,7 @@ body {
 .overview-action__label {
   color: color-mix(in srgb, var(--school-primary) 52%, white);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .overview-action > span:nth-child(2) {
@@ -1061,7 +1162,7 @@ body {
   border-radius: 50%;
   background: var(--school-primary);
   color: white;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .scope-note p {
@@ -1072,6 +1173,58 @@ body {
 
 .scope-note strong {
   color: var(--ink-strong);
+}
+
+.insights-section {
+  display: grid;
+  gap: 16px;
+  padding-block: 20px 0;
+  border-block-start: 1px solid color-mix(in srgb, var(--school-primary) 12%, white);
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
+}
+
+.insight-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.insight-panel h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+
+.insight-chart {
+  position: relative;
+  height: 220px;
+}
+
+.insight-chart--donut {
+  height: 200px;
+  max-width: 260px;
+}
+
+.insight-empty {
+  margin: 0;
+  padding-block: 32px;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  text-align: center;
+  border: 1px dashed color-mix(in srgb, var(--school-primary) 20%, white);
+  border-radius: 12px;
+}
+
+@media (min-width: 1024px) {
+  .insights-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .attendance-grid,
@@ -1179,7 +1332,7 @@ body {
 
 .live-clock time {
   font-size: clamp(2rem, 4vw, 3.3rem);
-  font-weight: 800;
+  font-weight: 600;
   line-height: 0.95;
   letter-spacing: -0.035em;
   font-variant-numeric: tabular-nums;
@@ -1218,7 +1371,7 @@ body {
   place-items: center;
   color: white;
   font-size: clamp(3rem, 8vw, 5.5rem);
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -0.04em;
 }
 
@@ -1239,7 +1392,7 @@ body {
   padding-inline: 13px;
   border-radius: 999px;
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .live-verdict--admitted {
@@ -1270,7 +1423,7 @@ body {
   margin: 0;
   color: rgba(255, 255, 255, 0.78);
   font-size: clamp(1rem, 2vw, 1.25rem);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .live-attendance-stage__message {
@@ -1303,7 +1456,7 @@ body {
 .live-attendance-stage__details dt {
   color: rgba(255, 255, 255, 0.62);
   font-size: 0.74rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1311,7 +1464,7 @@ body {
 .live-attendance-stage__details dd {
   margin: 6px 0 0;
   overflow-wrap: anywhere;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .live-attendance-stage__waiting .panel-label {
@@ -1370,6 +1523,39 @@ body {
   gap: 16px;
   justify-content: space-between;
   align-items: flex-start;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid color-mix(in srgb, var(--school-primary) 12%, white);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+.app-footer img {
+  display: block;
+  width: 20px;
+  height: auto;
+  object-fit: contain;
+  opacity: 0.85;
+}
+
+.platform-heading {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.platform-mark {
+  flex: none;
+  width: 40px;
+  height: auto;
+  object-fit: contain;
+  margin-block-start: 4px;
 }
 
 .section-heading h3,
@@ -1480,7 +1666,7 @@ body {
   background: var(--school-primary);
   color: white;
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -1532,7 +1718,7 @@ body {
   background: var(--school-primary);
   color: white;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -1579,7 +1765,7 @@ body {
   padding: 0 14px;
   border-radius: 999px;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   background: rgba(255, 255, 255, 0.18);
   color: white;
 }
@@ -1674,7 +1860,7 @@ body {
 
 .device-card__meta dt {
   font-size: 0.74rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--school-primary) 66%, black);
@@ -1796,7 +1982,7 @@ body {
 
 .event-card__details dt {
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--school-primary) 66%, black);
@@ -1818,7 +2004,7 @@ body {
   place-items: center;
   background: color-mix(in srgb, var(--school-primary) 12%, white);
   color: var(--ink-strong);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .status-pill {
@@ -1828,7 +2014,7 @@ body {
   padding: 0 10px;
   border-radius: 999px;
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .status-pill--admitted {
@@ -1854,6 +2040,17 @@ body {
 .status-pill--direction-out {
   background: color-mix(in srgb, var(--school-primary) 18%, white);
   color: color-mix(in srgb, var(--school-primary) 80%, black);
+}
+
+.inherited-value__tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--school-secondary) 70%, white);
+  white-space: nowrap;
 }
 
 .empty-state {
@@ -1984,7 +2181,6 @@ body {
 
   .auth-grid,
   .dashboard-grid,
-  .dashboard-header,
   .attendance-grid,
   .admin-grid,
   .admin-link-grid,
@@ -1998,20 +2194,8 @@ body {
     width: 100%;
   }
 
-  .dashboard-header,
   .dashboard-actions {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .dashboard-header {
-    align-items: stretch;
-  }
-
-  .dashboard-actions {
-    flex-direction: row;
     justify-content: space-between;
-    align-items: center;
   }
 
   .pagination {
@@ -2140,8 +2324,7 @@ body {
     height: 54px;
   }
 
-  .login-card,
-  .dashboard-header {
+  .login-card {
     padding: 20px;
   }
 
@@ -2321,14 +2504,6 @@ body {
   gap: clamp(28px, 4vw, 48px);
 }
 
-.dashboard-header {
-  padding: 10px 0 18px;
-  border-block-end: 1px solid color-mix(in srgb, var(--school-primary) 12%, white);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
 .school-mark,
 .school-mark--compact {
   box-shadow: none;
@@ -2365,8 +2540,8 @@ body {
 }
 
 .user-chip {
-  padding: 0;
-  border-radius: 0;
+  padding: 6px 10px 6px 6px;
+  border-radius: 12px;
   background: transparent;
 }
 
@@ -2621,10 +2796,6 @@ body {
 }
 
 @media (max-width: 640px) {
-  .dashboard-header {
-    padding: 6px 0 16px;
-  }
-
   .login-card {
     padding: 28px 0 0;
     border-inline-start: 0;
@@ -2683,7 +2854,7 @@ body {
 .compact-field span {
   color: var(--ink-soft);
   font-size: 0.76rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .list-toolbar__search input,
@@ -2741,6 +2912,12 @@ body {
   position: relative;
 }
 
+.table-column-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-end: 12px;
+}
+
 .export-columns summary {
   display: inline-flex;
   min-height: 44px;
@@ -2751,7 +2928,7 @@ body {
   border-radius: 9px;
   background: white;
   color: var(--ink-strong);
-  font-weight: 750;
+  font-weight: 600;
   cursor: pointer;
   list-style: none;
 }
@@ -2873,7 +3050,7 @@ body {
   background: transparent;
   color: var(--school-primary);
   font: inherit;
-  font-weight: 750;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -2943,18 +3120,19 @@ body {
   align-items: center;
   color: var(--ink-strong);
   text-decoration: none;
-  font-weight: 850;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
-.public-wordmark span {
-  display: grid;
-  place-items: center;
+.public-wordmark img {
+  display: block;
   width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--school-primary);
-  color: white;
+  height: auto;
+  object-fit: contain;
+}
+
+.public-wordmark--footer img {
+  width: 28px;
 }
 
 .public-hero {
@@ -3078,7 +3256,7 @@ body {
   margin-block-end: 10px;
   color: color-mix(in srgb, var(--school-primary) 60%, var(--ink-soft));
   font-size: 0.85rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.06em;
 }
 
@@ -3138,7 +3316,7 @@ body {
 
 .public-wordmark--footer {
   color: var(--ink-soft);
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .public-footer p {
@@ -3149,7 +3327,7 @@ body {
 .audit-filter span {
   color: var(--ink-soft);
   font-size: 0.74rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .support-context-error {
@@ -3192,6 +3370,18 @@ body {
   color: var(--ink-soft);
 }
 
+.support-school-features {
+  display: grid;
+  gap: 6px;
+  margin-block-start: 10px;
+}
+
+.support-school-feature-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .student-link-fieldset {
   min-width: 0;
   margin: 0;
@@ -3203,7 +3393,7 @@ body {
 .student-link-fieldset legend {
   padding: 0;
   color: var(--ink-strong);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .student-link-fieldset > p {
@@ -3344,7 +3534,7 @@ body {
   background: color-mix(in srgb, var(--school-accent) 20%, white);
   color: #6b4400;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .offline-banner__dot {
@@ -3398,7 +3588,7 @@ body {
     padding-block-start: 2px;
     color: var(--ink-soft);
     font-size: 0.7rem;
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
     content: attr(data-label);

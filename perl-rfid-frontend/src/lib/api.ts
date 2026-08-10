@@ -1,4 +1,4 @@
-import type { SchoolProfile } from '../types/school';
+import type { FeatureKey, SchoolProfile } from '../types/school';
 import type {
   ManagedDevice,
   ManagedDeviceCreatePayload,
@@ -201,6 +201,64 @@ export const exportAttendanceLogs = async (
   url.searchParams.set('columns', columns.join(','));
   const response = await fetch(url, { credentials: 'include' });
   await downloadApiCsv(response, 'attendance-records.csv');
+};
+
+export interface KioskDevice {
+  id: string;
+  name: string;
+  location: string;
+}
+
+export class DeviceAuthError extends Error {}
+
+export const connectDevice = async (deviceKey: string): Promise<KioskDevice> => {
+  const url = new URL('/api/device/connect', apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ deviceKey })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to connect this device'));
+  }
+
+  const payload = (await response.json()) as { device: KioskDevice };
+  return payload.device;
+};
+
+export const scanCardWithDeviceKey = async (
+  cardUid: string,
+  deviceKey: string
+): Promise<AttendanceScanResult> => {
+  const url = new URL('/api/device/scan', apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-device-key': deviceKey
+    },
+    body: JSON.stringify({ cardUid })
+  });
+
+  if (response.status === 401) {
+    throw new DeviceAuthError(await parseErrorMessage(response, 'This device key is no longer valid'));
+  }
+
+  const maybeResult = (await response.json()) as AttendanceScanResult | { message?: string };
+
+  if (!response.ok) {
+    if ('verdict' in maybeResult && 'log' in maybeResult) {
+      return maybeResult;
+    }
+
+    throw new Error(maybeResult.message ?? `Unable to send scan (${response.status})`);
+  }
+
+  return maybeResult as AttendanceScanResult;
 };
 
 export const scanCard = async (payload: ScanCardPayload): Promise<AttendanceScanResult> => {
@@ -601,7 +659,7 @@ export const createSupportSchool = async (
 
 export const updateSupportSchoolSmsSettings = async (
   schoolId: string,
-  input: { smsEnabled: boolean; smsSenderName: string | null }
+  input: { smsSenderName: string | null }
 ): Promise<SchoolProfile> => {
   const url = new URL(`/api/support/schools/${schoolId}/sms-settings`, apiBaseUrl);
   const response = await fetch(url, {
@@ -612,6 +670,25 @@ export const updateSupportSchoolSmsSettings = async (
   });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, 'Unable to update SMS subscription'));
+  }
+  const payload = (await response.json()) as { school: SchoolProfile };
+  return payload.school;
+};
+
+export const updateSchoolFeature = async (
+  schoolId: string,
+  featureKey: FeatureKey,
+  enabled: boolean
+): Promise<SchoolProfile> => {
+  const url = new URL(`/api/support/schools/${schoolId}/features`, apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ featureKey, enabled })
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to update feature'));
   }
   const payload = (await response.json()) as { school: SchoolProfile };
   return payload.school;

@@ -16,6 +16,11 @@ export interface IUserRepository {
   findById(userId: string): Promise<UserRecord | null>;
   findByCardUid(cardUid: string, options?: { includeInactive?: boolean }): Promise<UserRecord | null>;
   findStudentByCardUid(cardUid: string): Promise<UserRecord | null>;
+  findBySchoolIdNumber(
+    schoolId: string,
+    schoolIdNumber: string,
+    options?: { includeInactive?: boolean }
+  ): Promise<UserRecord | null>;
   listBySchool(schoolId: string): Promise<UserRecord[]>;
   listBySchoolPaged(schoolId: string, query: UserListQuery): Promise<PagedResult<UserRecord>>;
   create(user: UserRecord): Promise<UserRecord>;

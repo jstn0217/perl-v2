@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../providers/auth-context';
 import { useSchoolTheme } from '../providers/SchoolThemeContext';
+import { DashboardInsights } from '../components/DashboardInsights';
 import {
   canManageSchool,
   canViewSchoolWorkspace,
@@ -133,7 +134,9 @@ export const DashboardHomePage = () => {
             ) : null}
           </div>
         </section>
-      ) : (
+      ) : null}
+
+      {canViewWorkspace ? <DashboardInsights /> : (
         <aside className="scope-note">
           <span className="scope-note__mark" aria-hidden="true">✓</span>
           <p><strong>School-scoped session</strong><br />You’re viewing attendance for {school.name} only.</p>

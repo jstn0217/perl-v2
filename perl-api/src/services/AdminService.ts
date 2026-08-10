@@ -14,7 +14,9 @@ export interface ManagedUserView {
   role: SchoolUserRole;
   cardUid: string | null;
   gradeLevel: string | null;
+  schoolIdNumber: string | null;
   section: string | null;
+  address: string | null;
   imageUrl: string | null;
   phoneNumber: string | null;
   linkedStudentIds: string[];
@@ -29,10 +31,13 @@ export interface CreateManagedUserInput {
   role?: SchoolUserRole;
   cardUid?: string | null;
   gradeLevel?: string | null;
+  schoolIdNumber?: string | null;
   section?: string | null;
+  address?: string | null;
   imageUrl?: string | null;
   phoneNumber?: string | null;
   linkedStudentIds?: string[];
+  linkedGuardianIds?: string[];
 }
 
 export interface UpdateManagedUserInput {
@@ -43,10 +48,13 @@ export interface UpdateManagedUserInput {
   role?: SchoolUserRole;
   cardUid?: string | null;
   gradeLevel?: string | null;
+  schoolIdNumber?: string | null;
   section?: string | null;
+  address?: string | null;
   imageUrl?: string | null;
   phoneNumber?: string | null;
   linkedStudentIds?: string[];
+  linkedGuardianIds?: string[];
 }
 
 export interface ImportManagedUserInput extends Omit<CreateManagedUserInput, 'linkedStudentIds'> {
@@ -150,6 +158,27 @@ const assertUniqueCardUid = async (
   }
 
   throw new Error('Card UID values must remain unique across schools.');
+};
+
+const assertUniqueSchoolIdNumber = async (
+  userRepository: IUserRepository,
+  schoolId: string,
+  candidateSchoolIdNumber: string | null | undefined,
+  currentUserId?: string
+) => {
+  if (!candidateSchoolIdNumber) {
+    return;
+  }
+
+  const conflictingUser = await userRepository.findBySchoolIdNumber(schoolId, candidateSchoolIdNumber, {
+    includeInactive: true
+  });
+
+  if (!conflictingUser || conflictingUser.id === currentUserId) {
+    return;
+  }
+
+  throw new Error('A user with that school ID number already exists for this school.');
 };
 
 export class AdminService {
@@ -283,7 +312,10 @@ export class AdminService {
         ? await this.assertLinkedStudents(schoolId, input.linkedStudentIds ?? [])
         : [];
 
+    const schoolIdNumber = normalizeOptionalString(input.schoolIdNumber);
+
     await assertUniqueCardUid(this.userRepository, schoolId, cardUid);
+    await assertUniqueSchoolIdNumber(this.userRepository, schoolId, schoolIdNumber);
 
     const user: UserRecord = {
       id: `user-${schoolId}-${Date.now()}`,
@@ -295,7 +327,9 @@ export class AdminService {
       role,
       cardUid: cardUid ?? null,
       gradeLevel: normalizeOptionalString(input.gradeLevel) ?? null,
+      schoolIdNumber: schoolIdNumber ?? null,
       section: normalizeOptionalString(input.section) ?? null,
+      address: normalizeOptionalString(input.address) ?? null,
       imageUrl: normalizeOptionalString(input.imageUrl) ?? null,
       phoneNumber: normalizeOptionalString(input.phoneNumber) ?? null,
       linkedStudentIds,
@@ -303,6 +337,11 @@ export class AdminService {
     };
 
     const created = await this.userRepository.create(user);
+
+    if (role === 'STUDENT' && input.linkedGuardianIds !== undefined) {
+      const guardianIds = await this.assertLinkedGuardians(schoolId, input.linkedGuardianIds);
+      await this.syncGuardianLinksForStudent(schoolId, created.id, guardianIds);
+    }
 
     return this.toManagedUserView(created);
   }
@@ -395,8 +434,17 @@ export class AdminService {
       changes.gradeLevel = normalizeOptionalString(input.gradeLevel);
     }
 
+    if (input.schoolIdNumber !== undefined) {
+      changes.schoolIdNumber = normalizeOptionalString(input.schoolIdNumber);
+      await assertUniqueSchoolIdNumber(this.userRepository, schoolId, changes.schoolIdNumber, userId);
+    }
+
     if (input.section !== undefined) {
       changes.section = normalizeOptionalString(input.section);
+    }
+
+    if (input.address !== undefined) {
+      changes.address = normalizeOptionalString(input.address);
     }
 
     if (input.imageUrl !== undefined) {
@@ -421,6 +469,11 @@ export class AdminService {
 
     if (!updated) {
       throw new Error('User not found.');
+    }
+
+    if (nextRole === 'STUDENT' && input.linkedGuardianIds !== undefined) {
+      const guardianIds = await this.assertLinkedGuardians(schoolId, input.linkedGuardianIds);
+      await this.syncGuardianLinksForStudent(schoolId, updated.id, guardianIds);
     }
 
     return this.toManagedUserView(updated);
@@ -479,6 +532,51 @@ export class AdminService {
     return uniqueStudentIds;
   }
 
+  private async assertLinkedGuardians(schoolId: string, guardianIds: string[]): Promise<string[]> {
+    const uniqueGuardianIds = [...new Set(guardianIds)];
+
+    for (const guardianId of uniqueGuardianIds) {
+      const guardian = await this.userRepository.findById(guardianId);
+      if (!guardian || guardian.schoolId !== schoolId || guardian.role !== 'GUARDIAN') {
+        throw new Error('Guardian links must reference guardians from the same school.');
+      }
+    }
+
+    return uniqueGuardianIds;
+  }
+
+  private async syncGuardianLinksForStudent(
+    schoolId: string,
+    studentId: string,
+    guardianIds: string[]
+  ): Promise<void> {
+    const nextGuardianIds = new Set(guardianIds);
+    const schoolUsers = await this.userRepository.listBySchool(schoolId);
+    const currentGuardians = schoolUsers.filter(
+      (user) => user.role === 'GUARDIAN' && (user.linkedStudentIds ?? []).includes(studentId)
+    );
+    const currentGuardianIds = new Set(currentGuardians.map((guardian) => guardian.id));
+
+    for (const guardian of currentGuardians) {
+      if (!nextGuardianIds.has(guardian.id)) {
+        await this.userRepository.update(guardian.id, schoolId, {
+          linkedStudentIds: (guardian.linkedStudentIds ?? []).filter((id) => id !== studentId)
+        });
+      }
+    }
+
+    for (const guardianId of nextGuardianIds) {
+      if (!currentGuardianIds.has(guardianId)) {
+        const guardian = await this.userRepository.findById(guardianId);
+        if (guardian) {
+          await this.userRepository.update(guardianId, schoolId, {
+            linkedStudentIds: [...new Set([...(guardian.linkedStudentIds ?? []), studentId])]
+          });
+        }
+      }
+    }
+  }
+
   private toManagedUserView(user: UserRecord): ManagedUserView {
     return {
       id: user.id,
@@ -489,7 +587,9 @@ export class AdminService {
       role: user.role,
       cardUid: user.cardUid,
       gradeLevel: user.gradeLevel,
+      schoolIdNumber: user.schoolIdNumber,
       section: user.section,
+      address: user.address,
       imageUrl: user.imageUrl,
       phoneNumber: user.phoneNumber ?? null,
       linkedStudentIds: user.linkedStudentIds ?? [],

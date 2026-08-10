@@ -65,6 +65,10 @@ export class MockTenantRepository implements ITenantRepository {
       school.smsSenderName = changes.smsSenderName;
     }
 
+    if (changes.features !== undefined) {
+      school.features = { ...school.features, ...changes.features };
+    }
+
     if (changes.address !== undefined) {
       school.address = changes.address;
     }

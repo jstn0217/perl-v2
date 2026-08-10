@@ -2,6 +2,7 @@ import { MockNotificationRepository, resetMockNotificationTransactions } from '.
 import { MockTenantRepository } from '../src/repositories/mock/MockTenantRepository.js';
 import { MockUserRepository } from '../src/repositories/mock/MockUserRepository.js';
 import { NotificationService } from '../src/services/NotificationService.js';
+import { TenantService } from '../src/services/TenantService.js';
 import type { ISmsGateway } from '../src/notifications/index.js';
 
 const gateway: ISmsGateway = {
@@ -23,11 +24,13 @@ describe('NotificationService', () => {
   it('sends an admitted student scan to linked guardians and records the provider result', async () => {
     const repository = new MockNotificationRepository();
     const users = new MockUserRepository();
+    const tenantRepository = new MockTenantRepository();
     const service = new NotificationService(
       repository,
       users,
-      new MockTenantRepository(),
-      gateway
+      tenantRepository,
+      gateway,
+      new TenantService(tenantRepository)
     );
     const student = await users.findByCardUid('RFID-STMARYS-001');
     expect(student).not.toBeNull();
@@ -54,11 +57,13 @@ describe('NotificationService', () => {
   it('records a skipped transaction when the school subscription is disabled', async () => {
     const repository = new MockNotificationRepository();
     const users = new MockUserRepository();
+    const tenantRepository = new MockTenantRepository();
     const service = new NotificationService(
       repository,
       users,
-      new MockTenantRepository(),
-      gateway
+      tenantRepository,
+      gateway,
+      new TenantService(tenantRepository)
     );
     const student = await users.findByCardUid('RFID-GOLDEN-001');
 

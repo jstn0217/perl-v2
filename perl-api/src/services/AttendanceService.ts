@@ -54,6 +54,8 @@ export class AttendanceService {
       throw new Error('No device is configured for this school.');
     }
 
+    await this.deviceRepository.touchLastSeen(device.id);
+
     const student = await this.userRepository.findByCardUid(cardUid);
 
     if (!student || student.role === 'GUARDIAN') {

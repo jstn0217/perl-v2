@@ -35,7 +35,7 @@ export const LandingPage = () => {
     <main className="public-landing">
       <header className="public-header">
         <Link className="public-wordmark" to="/" aria-label="PERL home">
-          <span aria-hidden="true">P</span>
+          <img src="/brand/perl-mark-96.png" alt="" width="36" height="30" aria-hidden="true" />
           PERL
         </Link>
         <Link className="secondary-button secondary-button--link" to="/login">Sign in</Link>
@@ -112,7 +112,7 @@ export const LandingPage = () => {
 
       <footer className="public-footer">
         <span className="public-wordmark public-wordmark--footer">
-          <span aria-hidden="true">P</span>
+          <img src="/brand/perl-mark-96.png" alt="" width="28" height="24" aria-hidden="true" />
           PERL
         </span>
         <p>&copy; {new Date().getFullYear()} PERL School Management. Built for Philippine schools.</p>

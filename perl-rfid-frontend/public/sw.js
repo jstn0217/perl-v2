@@ -4,12 +4,13 @@
 // entry. It only guarantees the shell (HTML/CSS/JS/icons) still boots and a
 // readable offline screen appears when a navigation can't reach the network.
 
-const CACHE_VERSION = 'perl-shell-v1';
+const CACHE_VERSION = 'perl-shell-v2';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
   OFFLINE_URL,
   '/manifest.webmanifest',
+  '/favicon.ico',
   '/icons/icon-192.png',
   '/icons/icon-512.png'
 ];

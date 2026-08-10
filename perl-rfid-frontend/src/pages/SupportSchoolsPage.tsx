@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ListToolbar } from '../components/ListToolbar';
 import { Modal } from '../components/Modal';
@@ -6,10 +7,15 @@ import { useTenantContext } from '../providers/TenantContext';
 import {
   createSupportSchool,
   enterSupportSchool,
-  updateSupportSchoolSmsSettings
+  updateSchoolFeature
 } from '../lib/api';
 import { downloadCsvColumns, type CsvColumn } from '../lib/csv';
-import type { SchoolProfile } from '../types/school';
+import {
+  SCHOOL_FEATURE_KEYS,
+  SCHOOL_FEATURE_LABELS,
+  type FeatureKey,
+  type SchoolProfile
+} from '../types/school';
 import { canProvisionSchools, isSupportAgent } from '../lib/permissions';
 import { useAuth } from '../providers/auth-context';
 
@@ -25,11 +31,11 @@ const schoolExportColumns: CsvColumn<SchoolProfile>[] = [
   { key: 'name', label: 'School name', value: (school) => school.name },
   { key: 'slug', label: 'Slug', value: (school) => school.slug },
   { key: 'contactEmail', label: 'Contact email', value: (school) => school.contactEmail },
-  {
-    key: 'smsEnabled',
-    label: 'SMS subscription',
-    value: (school) => (school.smsEnabled ? 'Enabled' : 'Disabled')
-  },
+  ...SCHOOL_FEATURE_KEYS.map((featureKey): CsvColumn<SchoolProfile> => ({
+    key: featureKey,
+    label: SCHOOL_FEATURE_LABELS[featureKey].name,
+    value: (school) => (school.features[featureKey] ? 'Enabled' : 'Disabled')
+  })),
   {
     key: 'smsSenderName',
     label: 'SMS sender',
@@ -77,7 +83,9 @@ export const SupportSchoolsPage = () => {
   const [slugEdited, setSlugEdited] = useState(false);
   const [form, setForm] = useState(emptySchoolForm);
   const [search, setSearch] = useState('');
-  const [savingSmsSchoolId, setSavingSmsSchoolId] = useState<string | null>(null);
+  const [savingFeature, setSavingFeature] = useState<{ schoolId: string; featureKey: FeatureKey } | null>(
+    null
+  );
   const [selectedExportColumns, setSelectedExportColumns] = useState(
     defaultSchoolExportColumns
   );
@@ -89,36 +97,36 @@ export const SupportSchoolsPage = () => {
         school.name,
         school.slug,
         school.contactEmail,
-        school.smsEnabled ? 'enabled' : 'disabled',
+        ...SCHOOL_FEATURE_KEYS.map((featureKey) =>
+          school.features[featureKey] ? 'enabled' : 'disabled'
+        ),
         school.smsSenderName ?? ''
       ]
         .some((value) => value.toLocaleLowerCase().includes(query))
     );
   }, [schools, search]);
 
-  const updateSmsSubscription = async (school: SchoolProfile, enabled: boolean) => {
-    setSavingSmsSchoolId(school.id);
+  const updateFeature = async (school: SchoolProfile, featureKey: FeatureKey, enabled: boolean) => {
+    setSavingFeature({ schoolId: school.id, featureKey });
     setError(null);
     setNotice(null);
     try {
-      const updated = await updateSupportSchoolSmsSettings(school.id, {
-        smsEnabled: enabled,
-        smsSenderName: school.smsSenderName
-      });
+      const updated = await updateSchoolFeature(school.id, featureKey, enabled);
       const updatedSchools = schools.map((entry) => (entry.id === updated.id ? updated : entry));
       setAuthenticatedSchool(
         activeSchool.id === updated.id ? updated : activeSchool,
         updatedSchools
       );
-      setNotice(`${updated.name} SMS subscription is now ${enabled ? 'enabled' : 'disabled'}.`);
+      const featureName = SCHOOL_FEATURE_LABELS[featureKey].name;
+      setNotice(`${updated.name} ${featureName} is now ${enabled ? 'enabled' : 'disabled'}.`);
     } catch (updateError) {
       setError(
         updateError instanceof Error
           ? updateError.message
-          : 'Unable to update SMS subscription.'
+          : 'Unable to update feature.'
       );
     } finally {
-      setSavingSmsSchoolId(null);
+      setSavingFeature(null);
     }
   };
 
@@ -177,14 +185,17 @@ export const SupportSchoolsPage = () => {
   return (
     <section className="admin-shell">
       <header className="section-heading">
-        <div>
-          <p className="panel-label">{canProvision ? 'System administration' : 'Platform support'}</p>
-          <h2>School accounts</h2>
-          <p className="section-copy">
-            {isSupportAgent(user?.role)
-              ? 'Select a school context to inspect its profile, people, devices, attendance, and action history in read-only mode.'
-              : 'Select a school context to administer its profile, people, devices, and attendance. Every change is written to the system action log.'}
-          </p>
+        <div className="platform-heading">
+          <img className="platform-mark" src="/brand/perl-mark-96.png" alt="" width="40" height="34" aria-hidden="true" />
+          <div>
+            <p className="panel-label">{canProvision ? 'System administration' : 'Platform support'}</p>
+            <h2>School accounts</h2>
+            <p className="section-copy">
+              {isSupportAgent(user?.role)
+                ? 'Select a school context to inspect its profile, people, devices, attendance, and action history in read-only mode.'
+                : 'Select a school context to administer its profile, people, devices, and attendance. Every change is written to the system action log.'}
+            </p>
+          </div>
         </div>
         {canProvision ? <button
           className="primary-button"
@@ -195,6 +206,7 @@ export const SupportSchoolsPage = () => {
             setEditorOpen(true);
           }}
         >
+          <Plus size={16} aria-hidden="true" />
           Add school
         </button> : null}
       </header>
@@ -240,29 +252,37 @@ export const SupportSchoolsPage = () => {
             <article className="support-school-row" key={school.id}>
               <div>
                 <strong>{school.name}</strong>
-                <p>{school.contactEmail} · {school.slug}</p>
                 <p>
-                  <span className={`status-pill ${school.smsEnabled ? 'status-pill--admitted' : 'status-pill--muted'}`}>
-                    SMS {school.smsEnabled ? 'enabled' : 'disabled'}
-                  </span>
-                  {school.smsSenderName ? ` · Sender: ${school.smsSenderName}` : ''}
+                  {school.contactEmail} · {school.slug}
+                  {school.smsSenderName ? ` · SMS sender: ${school.smsSenderName}` : ''}
                 </p>
+                <div className="support-school-features">
+                  {SCHOOL_FEATURE_KEYS.map((featureKey) => {
+                    const enabled = school.features[featureKey];
+                    const label = SCHOOL_FEATURE_LABELS[featureKey];
+                    const isSaving =
+                      savingFeature?.schoolId === school.id && savingFeature.featureKey === featureKey;
+                    return (
+                      <div className="support-school-feature-row" key={featureKey}>
+                        <span className={`status-pill ${enabled ? 'status-pill--admitted' : 'status-pill--muted'}`}>
+                          {label.name} {enabled ? 'enabled' : 'disabled'}
+                        </span>
+                        {canProvision ? (
+                          <button
+                            className="secondary-button"
+                            disabled={isSaving}
+                            type="button"
+                            onClick={() => void updateFeature(school, featureKey, !enabled)}
+                          >
+                            {isSaving ? 'Saving…' : enabled ? `Disable ${label.name}` : `Enable ${label.name}`}
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               <div className="table-actions">
-                {canProvision ? (
-                  <button
-                    className="secondary-button"
-                    disabled={savingSmsSchoolId === school.id}
-                    type="button"
-                    onClick={() => void updateSmsSubscription(school, !school.smsEnabled)}
-                  >
-                    {savingSmsSchoolId === school.id
-                      ? 'Saving…'
-                      : school.smsEnabled
-                        ? 'Disable SMS'
-                        : 'Enable SMS'}
-                  </button>
-                ) : null}
                 <button
                   className={isActive ? 'primary-button' : 'secondary-button'}
                   type="button"

@@ -31,6 +31,11 @@ export const createSupportRoutes = (repositories: RepositorySet) => {
     ...systemAdminOnly,
     controller.updateSchoolSmsSettings
   );
+  router.patch(
+    '/support/schools/:schoolId/features',
+    ...systemAdminOnly,
+    controller.updateSchoolFeature
+  );
   router.post('/support/schools/:schoolId/access', ...supportOnly, controller.accessSchool);
   router.get('/support/audit-logs', ...supportOnly, controller.listAuditLogs);
   router.get('/support/audit-logs/export', ...supportOnly, controller.exportAuditLogs);

@@ -12,7 +12,9 @@ export interface UserRecord {
   role: SchoolUserRole;
   cardUid: string | null;
   gradeLevel: string | null;
+  schoolIdNumber: string | null;
   section: string | null;
+  address: string | null;
   imageUrl: string | null;
   phoneNumber?: string | null;
   linkedStudentIds?: string[];

@@ -1,6 +1,7 @@
 import type { AttendanceLogRecord } from '../../types/Attendance.js';
 import type { DeviceRecord } from '../../types/Device.js';
 import type { SchoolProfile } from '../../types/SchoolProfile.js';
+import type { FeatureKey } from '../../types/SchoolFeature.js';
 import type { SchoolUserRole, UserRecord } from '../../types/User.js';
 
 interface SchoolRow {
@@ -19,6 +20,7 @@ interface SchoolRow {
   timezone: string;
   academic_year_label: string | null;
   deped_school_id: string | null;
+  features: Partial<Record<FeatureKey, boolean>>;
 }
 
 interface UserRow {
@@ -31,10 +33,12 @@ interface UserRow {
   role: SchoolUserRole;
   card_uid: string | null;
   grade_level: string | null;
+  school_id_number: string | null;
   section: string | null;
   image_url: string | null;
   phone_number: string | null;
   linked_student_ids: string | null;
+  address: string | null;
   is_active: boolean;
 }
 
@@ -46,6 +50,7 @@ interface DeviceRow {
   key_hash: string;
   key_last_four: string;
   is_active: boolean;
+  last_seen_at: Date | null;
 }
 
 interface AttendanceLogRow {
@@ -77,7 +82,8 @@ export const mapSchoolRow = (row: SchoolRow): SchoolProfile => ({
   phone: row.phone,
   timezone: row.timezone,
   academicYearLabel: row.academic_year_label,
-  depedSchoolId: row.deped_school_id
+  depedSchoolId: row.deped_school_id,
+  features: { sms: false, ...row.features }
 });
 
 export const mapUserRow = (row: UserRow): UserRecord => ({
@@ -90,6 +96,7 @@ export const mapUserRow = (row: UserRow): UserRecord => ({
   role: row.role,
   cardUid: row.card_uid,
   gradeLevel: row.grade_level,
+  schoolIdNumber: row.school_id_number,
   section: row.section,
   imageUrl: row.image_url,
   phoneNumber: row.phone_number,
@@ -101,6 +108,7 @@ export const mapUserRow = (row: UserRow): UserRecord => ({
       return [];
     }
   })(),
+  address: row.address,
   isActive: row.is_active
 });
 
@@ -111,7 +119,8 @@ export const mapDeviceRow = (row: DeviceRow): DeviceRecord => ({
   location: row.location,
   keyHash: row.key_hash,
   keyLastFour: row.key_last_four,
-  isActive: row.is_active
+  isActive: row.is_active,
+  lastSeenAt: row.last_seen_at ? row.last_seen_at.toISOString() : null
 });
 
 export const mapAttendanceRow = (row: AttendanceLogRow): AttendanceLogRecord => ({

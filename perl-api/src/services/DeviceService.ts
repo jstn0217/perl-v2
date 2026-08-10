@@ -43,7 +43,8 @@ export class DeviceService {
       location: normalizedLocation,
       keyHash: hashDeviceKey(deviceKey),
       keyLastFour: deviceKey.slice(-4),
-      isActive: true
+      isActive: true,
+      lastSeenAt: null
     };
 
     const created = await this.deviceRepository.create(device);
@@ -119,7 +120,8 @@ export class DeviceService {
       name: device.name,
       location: device.location,
       keyLastFour: device.keyLastFour,
-      isActive: device.isActive
+      isActive: device.isActive,
+      lastSeenAt: device.lastSeenAt
     };
   }
 }

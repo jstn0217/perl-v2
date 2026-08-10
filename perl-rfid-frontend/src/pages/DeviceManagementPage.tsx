@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { Ban, Plus, RefreshCw } from 'lucide-react';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { InlineAlert } from '../components/InlineAlert';
 import { Modal } from '../components/Modal';
@@ -17,6 +18,7 @@ import { useTenantContext } from '../providers/TenantContext';
 import type { ManagedDevice, RegisteredDeviceResponse } from '../types/admin';
 import { downloadCsvColumns, type CsvColumn } from '../lib/csv';
 import { canManageSchool } from '../lib/permissions';
+import { formatRelativeTime } from '../lib/relativeTime';
 
 type DeviceFormState = {
   name: string;
@@ -276,6 +278,7 @@ export const DeviceManagementPage = () => {
             <div className="table-actions">
               <span className="status-pill status-pill--muted">{counts.active} active on page</span>
               {canEdit ? <button className="secondary-button" type="button" onClick={openRegistration}>
+                <Plus size={16} aria-hidden="true" />
                 Register scanner
               </button> : (
                 <span className="status-pill status-pill--muted">Read-only support view</span>
@@ -369,6 +372,10 @@ export const DeviceManagementPage = () => {
                       <dt>Saved key</dt>
                       <dd>•••• {device.keyLastFour}</dd>
                     </div>
+                    <div>
+                      <dt>Last seen</dt>
+                      <dd>{formatRelativeTime(device.lastSeenAt)}</dd>
+                    </div>
                   </dl>
                   {device.isActive && canEdit ? (
                     <div className="device-card__actions" aria-label={`Security actions for ${device.name}`}>
@@ -378,6 +385,7 @@ export const DeviceManagementPage = () => {
                         disabled={deviceAction !== null}
                         onClick={() => setRotateTarget(device)}
                       >
+                        <RefreshCw size={16} aria-hidden="true" />
                         {deviceAction?.deviceId === device.id && deviceAction.type === 'rotate'
                           ? 'Rotating key…'
                           : 'Rotate key'}
@@ -388,6 +396,7 @@ export const DeviceManagementPage = () => {
                         disabled={deviceAction !== null}
                         onClick={() => setDeactivateTarget(device)}
                       >
+                        <Ban size={16} aria-hidden="true" />
                         {deviceAction?.deviceId === device.id && deviceAction.type === 'deactivate'
                           ? 'Deactivating…'
                           : 'Deactivate'}

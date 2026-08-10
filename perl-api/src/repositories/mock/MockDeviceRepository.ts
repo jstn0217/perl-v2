@@ -108,4 +108,11 @@ export class MockDeviceRepository implements IDeviceRepository {
     mockDevices = mockDevices.filter((device) => device.schoolId !== schoolId);
     return before - mockDevices.length;
   }
+
+  async touchLastSeen(deviceId: string): Promise<void> {
+    const device = mockDevices.find((entry) => entry.id === deviceId);
+    if (device) {
+      device.lastSeenAt = new Date().toISOString();
+    }
+  }
 }

@@ -22,6 +22,7 @@ export const createAttendanceRoutes = (repositories: RepositorySet, smsGateway: 
   });
 
   router.post('/device/scan', deviceScanRateLimiter, attachSessionUser(authService), controller.scanCard);
+  router.post('/device/connect', deviceScanRateLimiter, controller.connectDevice);
   router.get('/attendance/logs', requireAuth(authService), controller.listLogs);
   router.get('/attendance/export', requireAuth(authService), controller.exportLogs);
   router.get('/attendance/stream', requireAuth(authService), controller.streamEvents);

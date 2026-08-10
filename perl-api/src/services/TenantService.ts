@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ITenantRepository } from '../repositories/interfaces/ITenantRepository.js';
 import type { SchoolProfile } from '../types/SchoolProfile.js';
+import type { FeatureKey } from '../types/SchoolFeature.js';
 
 export interface CreateSchoolInput {
   name: string;
@@ -74,6 +75,7 @@ export class TenantService {
       contactEmail,
       smsEnabled: false,
       smsSenderName: null,
+      features: { sms: false },
       address: null,
       phone: null,
       timezone: 'Asia/Manila',
@@ -100,6 +102,23 @@ export class TenantService {
     >
   ): Promise<SchoolProfile> {
     const updated = await this.tenantRepository.updateSchoolProfile(schoolId, changes);
+
+    if (!updated) {
+      throw new Error('School not found.');
+    }
+
+    return updated;
+  }
+
+  isFeatureEnabled(school: SchoolProfile, key: FeatureKey): boolean {
+    return school.features?.[key] ?? false;
+  }
+
+  async setFeature(schoolId: string, key: FeatureKey, enabled: boolean): Promise<SchoolProfile> {
+    const school = await this.getSchoolById(schoolId);
+    const updated = await this.tenantRepository.updateSchoolProfile(schoolId, {
+      features: { ...school.features, [key]: enabled }
+    });
 
     if (!updated) {
       throw new Error('School not found.');

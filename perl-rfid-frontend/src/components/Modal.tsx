@@ -1,5 +1,6 @@
 import type { PropsWithChildren } from 'react';
 import { useEffect, useId, useRef } from 'react';
+import { X } from 'lucide-react';
 
 interface ModalProps extends PropsWithChildren {
   description?: string;
@@ -53,7 +54,7 @@ export const Modal = ({
             {description ? <p id={descriptionId}>{description}</p> : null}
           </div>
           <button className="modal__close" type="button" onClick={onClose} aria-label={`Close ${title}`}>
-            <span aria-hidden="true">×</span>
+            <X size={20} aria-hidden="true" />
           </button>
         </header>
         <div className="modal__body">{children}</div>
