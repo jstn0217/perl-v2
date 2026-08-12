@@ -21,7 +21,11 @@ export const auditActions = [
   'USER_DATA_EXPORTED',
   'USER_DATA_ERASED',
   'SCHOOL_DATA_ERASED',
-  'SCHOOL_BACKUP_RESTORED'
+  'SCHOOL_BACKUP_RESTORED',
+  'SUPPORT_SCAN_SIMULATED',
+  'ATTENDANCE_LOGS_VIEWED',
+  'ATTENDANCE_STREAM_OPENED',
+  'SCHOOL_DATA_VIEWED'
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];

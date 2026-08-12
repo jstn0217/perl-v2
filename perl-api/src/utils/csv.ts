@@ -1,5 +1,5 @@
 const protectSpreadsheetCell = (value: string) =>
-  /^[=+\-@]/.test(value) ? `'${value}` : value;
+  /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 
 const escapeCsvCell = (value: unknown) => {
   const normalized = protectSpreadsheetCell(value === null || value === undefined ? '' : String(value));

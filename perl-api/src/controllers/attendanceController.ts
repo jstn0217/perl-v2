@@ -180,7 +180,7 @@ export const createAttendanceController = (
       };
       const deviceKeyHeader = req.header('x-device-key');
 
-      if (!cardUid) {
+      if (typeof cardUid !== 'string' || cardUid.trim().length === 0) {
         return res.status(400).json({ message: 'cardUid is required.' });
       }
 
@@ -226,6 +226,17 @@ export const createAttendanceController = (
         }
 
         const result = await attendanceService.scanCard(schoolId, cardUid);
+
+        if (isPlatformRole(currentUser.role)) {
+          await auditService.record(
+            schoolId,
+            currentUser,
+            'SUPPORT_SCAN_SIMULATED',
+            'SCHOOL',
+            schoolId,
+            `Simulated scan for card ${cardUid} (${result.verdict})`
+          );
+        }
 
         return res.status(result.verdict === 'ADMITTED' ? 200 : 400).json(result);
       } catch (error) {
@@ -277,12 +288,29 @@ export const createAttendanceController = (
         return res.status(401).json({ message: 'Authentication required.' });
       }
 
-      const visibleUserIds = await resolveVisibleUserIds(currentUser);
-      const payload = visibleUserIds
-        ? await attendanceService.listUserLogs(schoolId, visibleUserIds, page, pageSize, filters)
-        : await attendanceService.listSchoolLogs(schoolId, page, pageSize, filters);
+      if (isPlatformRole(currentUser.role)) {
+        await auditService.record(
+          schoolId,
+          currentUser,
+          'ATTENDANCE_LOGS_VIEWED',
+          'SCHOOL',
+          schoolId,
+          'Viewed attendance logs'
+        );
+      }
 
-      return res.json(payload);
+      try {
+        const visibleUserIds = await resolveVisibleUserIds(currentUser);
+        const payload = visibleUserIds
+          ? await attendanceService.listUserLogs(schoolId, visibleUserIds, page, pageSize, filters)
+          : await attendanceService.listSchoolLogs(schoolId, page, pageSize, filters);
+
+        return res.json(payload);
+      } catch (error) {
+        return res.status(400).json({
+          message: error instanceof Error ? error.message : 'Unable to load attendance logs.'
+        });
+      }
     },
 
     async exportLogs(req: Request, res: Response) {
@@ -333,6 +361,17 @@ export const createAttendanceController = (
         return res.status(error instanceof Error && error.message === 'Forbidden.' ? 403 : 401).json({
           message: error instanceof Error ? error.message : 'Authentication required.'
         });
+      }
+
+      if (isPlatformRole(req.currentUser.role)) {
+        await auditService.record(
+          schoolId,
+          req.currentUser,
+          'ATTENDANCE_STREAM_OPENED',
+          'SCHOOL',
+          schoolId,
+          'Opened live attendance stream'
+        );
       }
 
       res.setHeader('Content-Type', 'text/event-stream');

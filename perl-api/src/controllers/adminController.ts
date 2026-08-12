@@ -9,6 +9,7 @@ import { DeviceService } from '../services/DeviceService.js';
 import { SchoolDataService } from '../services/SchoolDataService.js';
 import { ImageService } from '../services/ImageService.js';
 import { readAuditFilters, sendAuditCsv } from './auditQuery.js';
+import { isPlatformRole } from '../auth/permissions.js';
 
 const readRouteParam = (value: string | string[] | undefined) => {
   return typeof value === 'string' ? value : null;
@@ -81,6 +82,15 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
     await auditService.record(schoolId, actor, action, targetType, targetId, summary);
   };
 
+  // Audits only a platform-role (SUPPORT/SYSTEM_ADMIN) actor viewing a school
+  // other than their own; ordinary school-user reads stay unaudited to avoid
+  // log spam.
+  const recordCrossSchoolRead = async (req: Request, schoolId: string, summary: string) => {
+    const actor = req.currentUser;
+    if (!actor || !isPlatformRole(actor.role) || actor.schoolId === schoolId) return;
+    await auditService.record(schoolId, actor, 'SCHOOL_DATA_VIEWED', 'SCHOOL', schoolId, summary);
+  };
+
   return {
     async getSchoolSummary(req: Request, res: Response) {
       try {
@@ -91,6 +101,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         }
 
         const summary = await adminService.getSchoolSummary(schoolId);
+        await recordCrossSchoolRead(req, schoolId, 'Viewed school summary');
 
         return res.json(summary);
       } catch (error) {
@@ -109,6 +120,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         }
 
         const school = await adminService.getSchoolProfile(schoolId);
+        await recordCrossSchoolRead(req, schoolId, 'Viewed school profile');
 
         return res.json({ school });
       } catch (error) {
@@ -176,6 +188,8 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
           role: readUserRole(req.query.role),
           status: readStatus(req.query.status)
         });
+
+        await recordCrossSchoolRead(req, schoolId, 'Viewed school users');
 
         return res.json({ users: items, total, page, pageSize });
       } catch (error) {
@@ -314,6 +328,8 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
           dir: readSortDir(req.query.dir),
           status: readStatus(req.query.status)
         });
+
+        await recordCrossSchoolRead(req, schoolId, 'Viewed school devices');
 
         return res.json({ devices: items, total, page, pageSize });
       } catch (error) {
@@ -496,6 +512,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
           filters,
           schoolId
         );
+        await recordCrossSchoolRead(req, schoolId, 'Viewed school audit logs');
         return res.json(auditPage);
       } catch (error) {
         return res.status(400).json({

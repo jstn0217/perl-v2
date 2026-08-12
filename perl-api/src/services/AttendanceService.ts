@@ -20,6 +20,12 @@ import type { NotificationService } from './NotificationService.js';
 const COOLDOWN_MINUTES = 30;
 const MAX_DAILY_SCANS = 2;
 
+// Mirrors the hard cap enforced by DbAttendanceRepository/MockAttendanceRepository
+// on listAllBySchool. When a school has at least this many records and no date
+// range is given, the repository result may be truncated to the most recent
+// records — require a bounded range instead of silently returning a partial set.
+const ATTENDANCE_UNBOUNDED_READ_CAP = 5000;
+
 const toMinuteDifference = (earlierIso: string, laterIso: string) => {
   return Math.floor((Date.parse(laterIso) - Date.parse(earlierIso)) / (1000 * 60));
 };
@@ -237,7 +243,15 @@ export class AttendanceService {
     filters: AttendanceFilters
   ): Promise<AttendanceLogListItem[]> {
     const allowedUserIds = userIds ? new Set(userIds) : null;
-    const rawRecords = (await this.attendanceRepository.listAllBySchool(schoolId)).filter((record) => {
+    const scopedRecords = await this.attendanceRepository.listAllBySchool(schoolId);
+
+    if (scopedRecords.length >= ATTENDANCE_UNBOUNDED_READ_CAP && !filters.from && !filters.to) {
+      throw new Error(
+        `This school has more than ${ATTENDANCE_UNBOUNDED_READ_CAP} attendance records; provide a from/to date range to narrow the results.`
+      );
+    }
+
+    const rawRecords = scopedRecords.filter((record) => {
       if (allowedUserIds && !allowedUserIds.has(record.userId)) return false;
       if (filters.verdict && record.verdict !== filters.verdict) return false;
       if (filters.direction && record.direction !== filters.direction) return false;

@@ -612,6 +612,69 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
     );
   });
 
+  it('validates client-supplied imageUrl on create and update', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!',
+      schoolSlug: 'st-marys'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+
+    const baseUser = {
+      email: 'image.student@stmarys.edu',
+      password: 'Password123!',
+      firstName: 'Iris',
+      lastName: 'Marasigan',
+      role: 'STUDENT',
+      cardUid: 'RFID-STMARYS-100'
+    };
+
+    for (const badUrl of ['http://example.com/photo.jpg', 'data:image/png;base64,AAAA', 'javascript:alert(1)', 'not-a-url']) {
+      const rejected = await request(app)
+        .post('/api/admin/schools/school-st-marys/users')
+        .set('Cookie', cookie)
+        .send({ ...baseUser, imageUrl: badUrl });
+
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.message).toBe('Image URL must be a valid https URL.');
+    }
+
+    const createResponse = await request(app)
+      .post('/api/admin/schools/school-st-marys/users')
+      .set('Cookie', cookie)
+      .send({ ...baseUser, imageUrl: 'https://cdn.example.com/photo.jpg' });
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.user.imageUrl).toBe('https://cdn.example.com/photo.jpg');
+
+    const createdUserId = createResponse.body.user.id as string;
+
+    const clearedUpdate = await request(app)
+      .patch(`/api/admin/schools/school-st-marys/users/${createdUserId}`)
+      .set('Cookie', cookie)
+      .send({ imageUrl: '' });
+
+    expect(clearedUpdate.status).toBe(200);
+    expect(clearedUpdate.body.user.imageUrl).toBeNull();
+
+    const rejectedUpdate = await request(app)
+      .patch(`/api/admin/schools/school-st-marys/users/${createdUserId}`)
+      .set('Cookie', cookie)
+      .send({ imageUrl: 'http://example.com/photo.jpg' });
+
+    expect(rejectedUpdate.status).toBe(400);
+    expect(rejectedUpdate.body.message).toBe('Image URL must be a valid https URL.');
+
+    const acceptedUpdate = await request(app)
+      .patch(`/api/admin/schools/school-st-marys/users/${createdUserId}`)
+      .set('Cookie', cookie)
+      .send({ imageUrl: 'https://cdn.example.com/new-photo.jpg' });
+
+    expect(acceptedUpdate.status).toBe(200);
+    expect(acceptedUpdate.body.user.imageUrl).toBe('https://cdn.example.com/new-photo.jpg');
+  });
+
   it('rejects duplicate or cross-school card UID assignments', async () => {
     const app = createApp(createRepositories(dataLayer));
     const loginResponse = await request(app).post('/api/auth/login').send({

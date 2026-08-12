@@ -19,11 +19,17 @@ export const createAuthRoutes = (repositories: RepositorySet) => {
     key: resolveLoginRateLimitKey,
     message: 'Too many login attempts. Please try again later.'
   });
+  const profileRateLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    maxRequests: 5,
+    key: (req) => `profile-password:${req.currentUser?.id ?? 'unknown'}`,
+    message: 'Too many profile update attempts. Please try again later.'
+  });
 
   router.post('/auth/login', loginRateLimiter, controller.login);
   router.post('/auth/logout', controller.logout);
   router.get('/auth/session', attachSessionUser(authService), controller.getSession);
-  router.patch('/auth/profile', requireAuth(authService), controller.updateProfile);
+  router.patch('/auth/profile', requireAuth(authService), profileRateLimiter, controller.updateProfile);
 
   return router;
 };

@@ -65,7 +65,12 @@ String htmlEscape(const String &value) {
 }
 
 bool isValidApiBaseUrl(const String &value) {
-  return value.startsWith("http://") && value.length() > 7 && value.length() <= 160 &&
+  // https:// is accepted for TLS-capable deployments. Note: the HTTP client below
+  // still uses plaintext WiFiClient; a follow-up must switch it to
+  // WiFiClientSecure to actually perform TLS for https:// base URLs.
+  bool validScheme = value.startsWith("https://") || value.startsWith("http://");
+  size_t minLength = value.startsWith("https://") ? 8 : 7;
+  return validScheme && value.length() > minLength && value.length() <= 160 &&
          value.indexOf('\n') == -1 && value.indexOf('\r') == -1;
 }
 

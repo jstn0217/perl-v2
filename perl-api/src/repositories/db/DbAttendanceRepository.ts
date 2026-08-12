@@ -4,6 +4,11 @@ import type { IAttendanceRepository } from '../interfaces/IAttendanceRepository.
 import { mapAttendanceRow, type AttendanceLogRow } from './mappers.js';
 import { getDbPool } from './pool.js';
 
+// Hard cap on unbounded whole-school reads (filtered listing/export). Mirrors
+// the cap in MockAttendanceRepository. Prevents a single request from loading
+// a school's entire attendance history into memory.
+const ATTENDANCE_UNBOUNDED_READ_CAP = 5000;
+
 export class DbAttendanceRepository implements IAttendanceRepository {
   async create(log: Omit<AttendanceLogRecord, 'id'>): Promise<AttendanceLogRecord> {
     const id = `attendance-${randomUUID()}`;
@@ -108,10 +113,15 @@ export class DbAttendanceRepository implements IAttendanceRepository {
   async listAllBySchool(schoolId: string): Promise<AttendanceLogRecord[]> {
     const { rows } = await getDbPool().query<AttendanceLogRow>(
       `SELECT id, school_id, user_id, device_id, direction, verdict, denial_reason, message, scanned_at
-       FROM attendance_logs
-       WHERE school_id = $1
+       FROM (
+         SELECT id, school_id, user_id, device_id, direction, verdict, denial_reason, message, scanned_at, created_at
+         FROM attendance_logs
+         WHERE school_id = $1
+         ORDER BY scanned_at DESC, created_at DESC
+         LIMIT $2
+       ) capped
        ORDER BY scanned_at ASC, created_at ASC, id ASC`,
-      [schoolId]
+      [schoolId, ATTENDANCE_UNBOUNDED_READ_CAP]
     );
     return rows.map(mapAttendanceRow);
   }

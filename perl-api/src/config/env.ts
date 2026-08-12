@@ -130,7 +130,7 @@ interface ProductionEnvironment {
 }
 
 export const validateRuntimeEnvironment = (config: ProductionEnvironment = env) => {
-  if (config.nodeEnvironment !== 'production') return;
+  if (config.nodeEnvironment === 'development' || config.nodeEnvironment === 'test') return;
 
   const errors: string[] = [];
   if (config.dataLayer !== 'db') errors.push('DATA_LAYER must be db.');

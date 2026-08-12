@@ -4,7 +4,7 @@ import type { DeviceRecord } from '../../types/Device.js';
 import type { SchoolProfile } from '../../types/SchoolProfile.js';
 import type { PlatformUserRecord, UserRecord } from '../../types/User.js';
 
-const hashPassword = (password: string) => bcrypt.hashSync(password, 10);
+const hashPassword = (password: string) => bcrypt.hashSync(password, 12);
 const hashDeviceKey = (deviceKey: string) => createHash('sha256').update(deviceKey).digest('hex');
 
 const createLogoDataUrl = (slug: string, label: string, primaryColor: string, accentColor: string) => {

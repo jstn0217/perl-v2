@@ -10,6 +10,11 @@ import type {
 } from '../types/User.js';
 import { isPlatformRole } from '../auth/permissions.js';
 
+// Fixed bcrypt hash (cost 12) of a throwaway value, generated at module load. Compared against
+// on any not-found login path so a bcrypt.compare always runs and timing stays constant
+// regardless of whether the email matched a platform user, a school user, or nobody.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('perl-dummy-password-for-timing-parity', 12);
+
 export interface UpdateProfileInput {
   firstName?: string;
   lastName?: string;
@@ -49,7 +54,7 @@ export class AuthService {
     }
 
     const user = await this.userRepository.findByEmail(email);
-    const passwordMatches = user ? await bcrypt.compare(password, user.passwordHash) : false;
+    const passwordMatches = await bcrypt.compare(password, user ? user.passwordHash : DUMMY_PASSWORD_HASH);
 
     if (!user || !passwordMatches) {
       throw new Error('Invalid credentials.');
@@ -126,7 +131,7 @@ export class AuthService {
       throw new Error('Current password is incorrect.');
     }
 
-    return bcrypt.hash(newPassword, 10);
+    return bcrypt.hash(newPassword, 12);
   }
 
   assertRoleAccess(user: SessionUser, allowedRoles: UserRole[], schoolId: string) {

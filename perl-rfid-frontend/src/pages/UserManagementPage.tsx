@@ -19,7 +19,7 @@ import { useAuth } from '../providers/auth-context';
 import { useTenantContext } from '../providers/TenantContext';
 import { downloadCsvColumns, parseCsv, type CsvColumn } from '../lib/csv';
 import { canManageSchool } from '../lib/permissions';
-import { UserForm } from '../components/forms/UserForm';
+import { UserForm, type UserImageMode } from '../components/forms/UserForm';
 import { createEmptyUserForm, toUserFormState, type UserFormState } from '../components/forms/userFormState';
 import { ExportColumnSelector } from '../components/ExportColumnSelector';
 import type {
@@ -128,9 +128,11 @@ export const UserManagementPage = () => {
   const [formState, setFormState] = useState<UserFormState>(createEmptyUserForm);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageMode, setImageMode] = useState<UserImageMode>('upload');
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const initialFormStateRef = useRef<UserFormState>(createEmptyUserForm());
   const initialImageFileRef = useRef<File | null>(null);
+  const initialImageModeRef = useRef<UserImageMode>('upload');
 
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -419,7 +421,8 @@ export const UserManagementPage = () => {
 
   const isFormDirty = () =>
     JSON.stringify(formState) !== JSON.stringify(initialFormStateRef.current) ||
-    imageFile !== initialImageFileRef.current;
+    imageFile !== initialImageFileRef.current ||
+    imageMode !== initialImageModeRef.current;
 
   const resetEditor = () => {
     setEditorOpen(false);
@@ -444,6 +447,8 @@ export const UserManagementPage = () => {
     setImageFile(null);
     initialImageFileRef.current = null;
     setImagePreview(null);
+    setImageMode('upload');
+    initialImageModeRef.current = 'upload';
     setError(null);
     setNotice(null);
     setEditorOpen(true);
@@ -463,9 +468,22 @@ export const UserManagementPage = () => {
     setImageFile(null);
     initialImageFileRef.current = null;
     setImagePreview(managedUser.imageUrl);
+    // Existing users with a stored URL are almost always S3-hosted; default to URL mode
+    // so the admin sees their current photo source rather than an empty file picker.
+    const startMode: UserImageMode = managedUser.imageUrl ? 'url' : 'upload';
+    setImageMode(startMode);
+    initialImageModeRef.current = startMode;
     setError(null);
     setNotice(null);
     setEditorOpen(true);
+  };
+
+  const handleImageModeChange = (nextMode: UserImageMode) => {
+    setImageMode(nextMode);
+    if (nextMode === 'url') {
+      // Switching to URL mode: drop any selected file so it can't override the typed URL on submit.
+      setImageFile(null);
+    }
   };
 
   const normalizeOptionalField = (value: string) => {
@@ -500,7 +518,7 @@ export const UserManagementPage = () => {
         };
 
         let createdUser = await createAdminUser(activeSchool.id, payload);
-        if (imageFile) {
+        if (imageMode === 'upload' && imageFile) {
           createdUser = await uploadAdminUserImage(activeSchool.id, createdUser.id, imageFile);
         }
         setNotice(`Added ${createdUser.firstName} ${createdUser.lastName} to ${createdUser.role}.`);
@@ -510,6 +528,7 @@ export const UserManagementPage = () => {
         setFormState(createEmptyUserForm());
         setImageFile(null);
         setImagePreview(null);
+        setImageMode('upload');
       } else if (selectedUser) {
         const payload: ManagedUserUpdatePayload = {
           email: formState.email,
@@ -532,7 +551,7 @@ export const UserManagementPage = () => {
         }
 
         let updatedUser = await updateAdminUser(activeSchool.id, selectedUser.id, payload);
-        if (imageFile) {
+        if (imageMode === 'upload' && imageFile) {
           updatedUser = await uploadAdminUserImage(activeSchool.id, selectedUser.id, imageFile);
         }
         setNotice(`Updated ${updatedUser.firstName} ${updatedUser.lastName}.`);
@@ -969,11 +988,13 @@ export const UserManagementPage = () => {
       >
         <UserForm
           error={error}
+          imageMode={imageMode}
           imagePreview={imagePreview}
           mode={editorMode}
           onCancel={requestCloseEditor}
           onChange={setFormState}
           onImageChange={handleImageChange}
+          onImageModeChange={handleImageModeChange}
           onSubmit={handleSubmit}
           saving={saveStatus === 'saving'}
           students={studentsDirectory}

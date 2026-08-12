@@ -1697,6 +1697,54 @@ body {
   max-width: 100%;
 }
 
+.image-mode-toggle {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+}
+
+.image-mode-toggle legend {
+  padding: 0 0 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--school-primary) 72%, black);
+}
+
+.segmented-control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--school-secondary) 60%, white);
+}
+
+.segmented-control__option {
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.segmented-control__option:hover {
+  color: var(--ink-strong);
+}
+
+.segmented-control__option:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--school-accent) 42%, white);
+  outline-offset: 2px;
+}
+
+.segmented-control__option--active {
+  background: white;
+  color: color-mix(in srgb, var(--school-primary) 82%, black);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
 .user-avatar {
   width: 42px;
   height: 42px;

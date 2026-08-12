@@ -10,6 +10,10 @@ RUN cd perl-rfid-frontend && npm ci
 
 COPY . .
 
+RUN chown -R node:node /app
+
+USER node
+
 EXPOSE 4000 5173
 
 CMD ["sh", "./scripts/docker-start.sh"]

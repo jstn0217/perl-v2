@@ -97,6 +97,28 @@ const normalizeOptionalString = (value: string | null | undefined) => {
   return normalized.length > 0 ? normalized : null;
 };
 
+const validateOptionalImageUrl = (value: string | null | undefined) => {
+  const normalized = normalizeOptionalString(value);
+
+  if (!normalized) {
+    return normalized;
+  }
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error('Image URL must be a valid https URL.');
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Image URL must be a valid https URL.');
+  }
+
+  return normalized;
+};
+
 const normalizeRequiredString = (value: string | undefined, field: string) => {
   const normalized = value?.trim();
 
@@ -321,7 +343,7 @@ export class AdminService {
       id: `user-${schoolId}-${Date.now()}`,
       schoolId,
       email,
-      passwordHash: await bcrypt.hash(password, 10),
+      passwordHash: await bcrypt.hash(password, 12),
       firstName,
       lastName,
       role,
@@ -330,7 +352,7 @@ export class AdminService {
       schoolIdNumber: schoolIdNumber ?? null,
       section: normalizeOptionalString(input.section) ?? null,
       address: normalizeOptionalString(input.address) ?? null,
-      imageUrl: normalizeOptionalString(input.imageUrl) ?? null,
+      imageUrl: validateOptionalImageUrl(input.imageUrl) ?? null,
       phoneNumber: normalizeOptionalString(input.phoneNumber) ?? null,
       linkedStudentIds,
       isActive: true
@@ -422,7 +444,7 @@ export class AdminService {
     }
 
     if (input.password !== undefined) {
-      changes.passwordHash = await bcrypt.hash(assertPassword(input.password), 10);
+      changes.passwordHash = await bcrypt.hash(assertPassword(input.password), 12);
     }
 
     if (input.cardUid !== undefined) {
@@ -448,7 +470,7 @@ export class AdminService {
     }
 
     if (input.imageUrl !== undefined) {
-      changes.imageUrl = normalizeOptionalString(input.imageUrl);
+      changes.imageUrl = validateOptionalImageUrl(input.imageUrl);
     }
 
     if (input.phoneNumber !== undefined) {

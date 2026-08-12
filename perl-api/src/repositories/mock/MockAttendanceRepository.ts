@@ -4,6 +4,11 @@ import { toLocalDateKey } from '../../utils/timezone.js';
 
 let attendanceLogs: AttendanceLogRecord[] = [];
 
+// Hard cap on unbounded whole-school reads (filtered listing/export). Mirrors
+// the cap in DbAttendanceRepository. Prevents a single request from loading
+// a school's entire attendance history into memory.
+const ATTENDANCE_UNBOUNDED_READ_CAP = 5000;
+
 export const resetMockAttendanceLogs = () => {
   attendanceLogs = [];
 };
@@ -60,7 +65,11 @@ export class MockAttendanceRepository implements IAttendanceRepository {
   }
 
   async listAllBySchool(schoolId: string): Promise<AttendanceLogRecord[]> {
-    return attendanceLogs.filter((log) => log.schoolId === schoolId);
+    // Records are unshifted on create, so the array is already newest-first;
+    // slicing from the front caps at the most recent entries.
+    return attendanceLogs
+      .filter((log) => log.schoolId === schoolId)
+      .slice(0, ATTENDANCE_UNBOUNDED_READ_CAP);
   }
 
   async restore(log: AttendanceLogRecord): Promise<AttendanceLogRecord> {

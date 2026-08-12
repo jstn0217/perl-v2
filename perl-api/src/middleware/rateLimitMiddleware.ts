@@ -29,12 +29,28 @@ export const resetRateLimiters = () => {
   }
 };
 
+const sweepExpiredEntries = (store: Map<string, RateLimitEntry>, now: number, windowMs: number) => {
+  for (const [identifier, entry] of store) {
+    if (now - entry.windowStart >= windowMs) {
+      store.delete(identifier);
+    }
+  }
+};
+
 export const createRateLimiter = ({ key, maxRequests, message, windowMs }: RateLimitOptions) => {
   const store = new Map<string, RateLimitEntry>();
   rateLimitStores.add(store);
+  let requestsSinceSweep = 0;
 
   return (req: Request, res: Response, next: NextFunction) => {
     const now = Date.now();
+
+    requestsSinceSweep += 1;
+    if (requestsSinceSweep >= 100) {
+      requestsSinceSweep = 0;
+      sweepExpiredEntries(store, now, windowMs);
+    }
+
     const identifier = key(req);
     const entry = store.get(identifier);
 
@@ -65,6 +81,10 @@ export const resolveLoginRateLimitKey = (req: Request) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : 'unknown-email';
 
   return `login:${getClientAddress(req)}:${email}`;
+};
+
+export const resolveLoginIpRateLimitKey = (req: Request) => {
+  return `login-ip:${getClientAddress(req)}`;
 };
 
 export const resolveDeviceScanRateLimitKey = (req: Request) => {

@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { createSessionToken } from '../auth/session.js';
+import { createSessionToken, revokeSessionToken } from '../auth/session.js';
 import { env } from '../config/env.js';
 import type { RepositorySet } from '../repositories/index.js';
 import { AuthService } from '../services/AuthService.js';
@@ -53,7 +53,11 @@ export const createAuthController = (repositories: RepositorySet) => {
       }
     },
 
-    async logout(_req: Request, res: Response) {
+    async logout(req: Request, res: Response) {
+      const token = req.cookies?.[env.jwtCookieName];
+      if (typeof token === 'string' && token.length > 0) {
+        revokeSessionToken(token);
+      }
       clearSessionCookie(res);
       return res.status(204).send();
     },

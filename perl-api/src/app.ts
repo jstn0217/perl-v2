@@ -1,5 +1,6 @@
 import cookieParser from 'cookie-parser';
 import express from 'express';
+import helmet from 'helmet';
 import { env } from './config/env.js';
 import { createAttendanceRoutes } from './routes/attendanceRoutes.js';
 import { createAdminRoutes } from './routes/adminRoutes.js';
@@ -17,6 +18,8 @@ export const createApp = (
   smsGateway: ISmsGateway = createSmsGateway()
 ) => {
   const app = express();
+
+  app.use(helmet());
 
   app.use((req, res, next) => {
     const requestOrigin = req.headers.origin;
@@ -43,6 +46,15 @@ export const createApp = (
   app.use('/api', createSchoolRoutes(repositories));
   app.use('/api', createAdminRoutes(repositories, imageStorage));
   app.use('/api', createSupportRoutes(repositories));
+
+  app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (res.headersSent) {
+      return next(err);
+    }
+
+    console.error('Unhandled request error:', err);
+    res.status(500).json({ message: 'Internal server error.' });
+  });
 
   return app;
 };

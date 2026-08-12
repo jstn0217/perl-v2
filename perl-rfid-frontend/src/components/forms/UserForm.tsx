@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { InlineAlert } from '../InlineAlert';
 import type { ManagedUser, SchoolUserRole } from '../../types/admin';
@@ -5,13 +6,17 @@ import type { UserFormState } from './userFormState';
 
 const roleOptions: SchoolUserRole[] = ['ADMIN', 'STAFF', 'STUDENT', 'GUARDIAN'];
 
+export type UserImageMode = 'upload' | 'url';
+
 interface UserFormProps {
   error?: string | null;
+  imageMode: UserImageMode;
   imagePreview: string | null;
   mode: 'create' | 'edit';
   onCancel: () => void;
   onChange: (next: UserFormState) => void;
   onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onImageModeChange: (mode: UserImageMode) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   saving: boolean;
   students: ManagedUser[];
@@ -26,43 +31,90 @@ interface UserFormProps {
  */
 export const UserForm = ({
   error,
+  imageMode,
   imagePreview,
   mode,
   onCancel,
   onChange,
   onImageChange,
+  onImageModeChange,
   onSubmit,
   saving,
   students,
   guardians,
   value
 }: UserFormProps) => {
+  const [failedUrlPreview, setFailedUrlPreview] = useState<string | null>(null);
   const setField = <Key extends keyof UserFormState>(key: Key, fieldValue: UserFormState[Key]) => {
     onChange({ ...value, [key]: fieldValue });
   };
+
+  const initials = `${value.firstName.slice(0, 1)}${value.lastName.slice(0, 1)}`;
+  const urlPreviewSrc = value.imageUrl.trim();
+  const showUrlPreview = imageMode === 'url' && urlPreviewSrc.length > 0 && urlPreviewSrc !== failedUrlPreview;
+  const showUploadPreview = imageMode === 'upload' && Boolean(imagePreview);
 
   return (
     <form className="admin-form modal-form" onSubmit={onSubmit}>
       {error ? <InlineAlert tone="error" message={error} /> : null}
 
       <div className="image-upload-row">
-        {imagePreview ? (
+        {showUploadPreview || showUrlPreview ? (
           <img
-            src={imagePreview}
+            src={showUrlPreview ? urlPreviewSrc : (imagePreview as string)}
             alt="Selected user preview"
             className="user-avatar user-avatar--large"
             loading="lazy"
+            onError={showUrlPreview ? () => setFailedUrlPreview(urlPreviewSrc) : undefined}
           />
         ) : (
           <span className="user-avatar user-avatar--large user-avatar--fallback" aria-hidden="true">
-            {value.firstName.slice(0, 1)}{value.lastName.slice(0, 1)}
+            {initials}
           </span>
         )}
-        <label className="field upload-field">
-          <span>User photo</span>
-          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={onImageChange} />
-          <small>JPEG, PNG, or WebP. Maximum 5 MB.</small>
-        </label>
+        <div className="upload-field">
+          <fieldset className="image-mode-toggle">
+            <legend>Photo source</legend>
+            <div className="segmented-control" role="group" aria-label="Photo source">
+              <button
+                type="button"
+                className={`segmented-control__option${imageMode === 'upload' ? ' segmented-control__option--active' : ''}`}
+                aria-pressed={imageMode === 'upload'}
+                onClick={() => onImageModeChange('upload')}
+              >
+                Upload file
+              </button>
+              <button
+                type="button"
+                className={`segmented-control__option${imageMode === 'url' ? ' segmented-control__option--active' : ''}`}
+                aria-pressed={imageMode === 'url'}
+                onClick={() => onImageModeChange('url')}
+              >
+                Image URL
+              </button>
+            </div>
+          </fieldset>
+
+          {imageMode === 'upload' ? (
+            <label className="field">
+              <span>User photo</span>
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={onImageChange} />
+              <small>JPEG, PNG, or WebP. Maximum 5 MB.</small>
+            </label>
+          ) : (
+            <label className="field">
+              <span>Image URL</span>
+              <input
+                type="url"
+                inputMode="url"
+                value={value.imageUrl}
+                onChange={(event) => setField('imageUrl', event.target.value)}
+                placeholder="https://bucket.s3.amazonaws.com/students/photo.jpg"
+              />
+              <small>Must be an https image URL.</small>
+            </label>
+          )}
+        </div>
       </div>
 
       <div className="field-grid">
