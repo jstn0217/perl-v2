@@ -63,6 +63,7 @@ export interface ImportManagedUserInput extends Omit<CreateManagedUserInput, 'li
 
 export interface ImportManagedUserResult {
   created: ManagedUserView[];
+  updated: ManagedUserView[];
   errors: Array<{ row: number; message: string }>;
 }
 
@@ -368,6 +369,23 @@ export class AdminService {
     return this.toManagedUserView(created);
   }
 
+  /**
+   * Imports school users from a spreadsheet upload.
+   *
+   * Match key: a row's trimmed, non-empty `schoolIdNumber` matched against an
+   * existing user in the same school. A match UPDATES that user; rows with a
+   * blank/missing `schoolIdNumber` are always CREATE-only (unchanged behavior,
+   * still error on duplicate email/cardUid).
+   *
+   * Conflict rule: if a row matches user A by schoolIdNumber but its email or
+   * cardUid belongs to a different existing user B, the row errors out rather
+   * than overwriting either record.
+   *
+   * On update, password is optional: a non-empty row password is re-hashed
+   * and replaces the stored hash; a blank row password leaves the existing
+   * hash untouched. `id` and `isActive` are always preserved on update — an
+   * import row never reactivates a deactivated user.
+   */
   async importUsers(
     schoolId: string,
     rows: ImportManagedUserInput[]
@@ -386,6 +404,7 @@ export class AdminService {
       ...indexedRows.filter(({ input }) => input.role === 'GUARDIAN')
     ];
     const created: ManagedUserView[] = [];
+    const updated: ManagedUserView[] = [];
     const errors: ImportManagedUserResult['errors'] = [];
 
     for (const { input, row } of orderedRows) {
@@ -400,7 +419,24 @@ export class AdminService {
             linkedStudentIds.push(student.id);
           }
         }
-        created.push(await this.createUser(schoolId, { ...input, linkedStudentIds }));
+
+        const schoolIdNumber = normalizeOptionalString(input.schoolIdNumber);
+        const existingMatch = schoolIdNumber
+          ? await this.userRepository.findBySchoolIdNumber(schoolId, schoolIdNumber, {
+              includeInactive: true
+            })
+          : null;
+
+        if (existingMatch && schoolIdNumber) {
+          updated.push(
+            await this.updateImportedUser(schoolId, existingMatch, schoolIdNumber, {
+              ...input,
+              linkedStudentIds
+            })
+          );
+        } else {
+          created.push(await this.createUser(schoolId, { ...input, linkedStudentIds }));
+        }
       } catch (error) {
         errors.push({
           row,
@@ -409,7 +445,55 @@ export class AdminService {
       }
     }
 
-    return { created, errors: errors.sort((left, right) => left.row - right.row) };
+    return { created, updated, errors: errors.sort((left, right) => left.row - right.row) };
+  }
+
+  private async updateImportedUser(
+    schoolId: string,
+    existing: UserRecord,
+    schoolIdNumber: string,
+    input: ImportManagedUserInput & { linkedStudentIds: string[] }
+  ): Promise<ManagedUserView> {
+    const conflictMessage = `Row matches student ID ${schoolIdNumber} (user ${existing.id}) but its email/card UID belongs to a different user.`;
+
+    if (input.email !== undefined) {
+      const email = normalizeRequiredString(input.email, 'Email').toLowerCase();
+      const conflicting = await this.userRepository.findByEmail(email, { includeInactive: true });
+      if (conflicting && conflicting.id !== existing.id) {
+        throw new Error(conflictMessage);
+      }
+    }
+
+    const candidateCardUid = normalizeOptionalString(input.cardUid);
+    if (candidateCardUid) {
+      const conflicting = await this.userRepository.findByCardUid(candidateCardUid, {
+        includeInactive: true
+      });
+      if (conflicting && conflicting.id !== existing.id) {
+        throw new Error(conflictMessage);
+      }
+    }
+
+    const updateInput: UpdateManagedUserInput = {
+      email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      role: input.role,
+      cardUid: input.cardUid,
+      gradeLevel: input.gradeLevel,
+      schoolIdNumber: input.schoolIdNumber,
+      section: input.section,
+      address: input.address,
+      imageUrl: input.imageUrl,
+      phoneNumber: input.phoneNumber,
+      linkedStudentIds: input.linkedStudentIds
+    };
+
+    if (input.password && input.password.trim().length > 0) {
+      updateInput.password = input.password;
+    }
+
+    return this.updateUser(schoolId, existing.id, updateInput);
   }
 
   async updateUser(schoolId: string, userId: string, input: UpdateManagedUserInput): Promise<ManagedUserView> {

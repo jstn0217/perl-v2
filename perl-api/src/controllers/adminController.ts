@@ -231,7 +231,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
           'USERS_IMPORTED',
           'SCHOOL',
           schoolId,
-          `Imported ${result.created.length} school users; ${result.errors.length} rows failed`
+          `Imported ${result.created.length} school users, updated ${result.updated.length}; ${result.errors.length} rows failed`
         );
         return res.status(result.errors.length > 0 ? 207 : 201).json(result);
       } catch (error) {

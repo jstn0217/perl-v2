@@ -74,6 +74,7 @@ export interface ManagedUserImportPayload extends Omit<ManagedUserCreatePayload,
 
 export interface ManagedUserImportResult {
   created: ManagedUser[];
+  updated: ManagedUser[];
   errors: Array<{ row: number; message: string }>;
 }
 

@@ -1,4 +1,4 @@
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import {
   createMockDevices,
   createMockPlatformUsers,
@@ -13,6 +13,40 @@ let schemaReady = false;
 // Postgres advisory locks take a bigint key, not a name. There is only ever one
 // lock used in this codebase (database bootstrap), so a fixed constant is enough.
 const initializationLockKey = 727384950;
+
+// Duplicate (school_id, school_id_number) rows can exist from before this constraint
+// was introduced. Adding the index unconditionally would fail app boot on any
+// deployment with pre-existing duplicates, so detect and skip instead of crashing.
+const ensureSchoolIdNumberUniqueIndex = async (pool: Pool) => {
+  const { rows: duplicates } = await pool.query<{
+    school_id: string;
+    school_id_number: string;
+    total: string;
+  }>(
+    `SELECT school_id, school_id_number, COUNT(*) AS total
+     FROM users
+     WHERE school_id_number IS NOT NULL
+     GROUP BY school_id, school_id_number
+     HAVING COUNT(*) > 1`
+  );
+
+  if (duplicates.length > 0) {
+    const details = duplicates
+      .map((row) => `school_id=${row.school_id} school_id_number=${row.school_id_number} (${row.total} rows)`)
+      .join('; ');
+    console.warn(
+      `[schema] Skipping unique index uq_users_school_school_id_number due to existing duplicate ` +
+        `(school_id, school_id_number) pairs: ${details}`
+    );
+    return;
+  }
+
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_users_school_school_id_number
+     ON users (school_id, school_id_number)
+     WHERE school_id_number IS NOT NULL`
+  );
+};
 
 const createTables = async () => {
   const pool = getDbPool();
@@ -205,9 +239,8 @@ const createTables = async () => {
   await pool.query(
     'CREATE INDEX IF NOT EXISTS idx_users_school_student_id ON users (school_id, student_id)'
   );
-  await pool.query(
-    'CREATE INDEX IF NOT EXISTS idx_users_school_school_id_number ON users (school_id, school_id_number)'
-  );
+  await pool.query('DROP INDEX IF EXISTS idx_users_school_school_id_number');
+  await ensureSchoolIdNumberUniqueIndex(pool);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school ON devices (school_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school_name ON devices (school_id, name)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school_location ON devices (school_id, location)');

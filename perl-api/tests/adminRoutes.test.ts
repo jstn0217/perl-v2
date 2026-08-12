@@ -1,3 +1,4 @@
+import bcrypt from 'bcrypt';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { createRepositories, describeForDataLayers } from './helpers/dataLayer.js';
@@ -311,6 +312,176 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
     expect(exportedAudit.text).toContain('"Occurred at","Action","Change summary"');
     expect(exportedAudit.text).toContain('USERS_IMPORTED');
     expect(exportedAudit.text).not.toContain('"Actor user ID"');
+  });
+
+  it('upserts import rows by schoolIdNumber: create on new, update+preserve id on match, password optional', async () => {
+    const repositories = createRepositories(dataLayer);
+    const app = createApp(repositories);
+    const login = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!'
+    });
+    const cookie = login.headers['set-cookie'][0];
+
+    const firstImport = await request(app)
+      .post('/api/admin/schools/school-st-marys/users/import')
+      .set('Cookie', cookie)
+      .send({
+        rows: [
+          {
+            email: 'ida.num@stmarys.edu',
+            password: 'Password123!',
+            firstName: 'Ida',
+            lastName: 'Num',
+            role: 'STUDENT',
+            cardUid: 'RFID-IDNUM-001',
+            gradeLevel: 'Grade 7',
+            section: 'Ruby',
+            schoolIdNumber: 'STU-500'
+          }
+        ]
+      });
+
+    expect(firstImport.status).toBe(201);
+    expect(firstImport.body.created).toHaveLength(1);
+    expect(firstImport.body.updated).toHaveLength(0);
+    const userId = firstImport.body.created[0].id;
+
+    const originalUser = await repositories.userRepository.findById(userId);
+    const originalHash = originalUser?.passwordHash;
+    expect(originalHash).toBeTruthy();
+
+    const secondImport = await request(app)
+      .post('/api/admin/schools/school-st-marys/users/import')
+      .set('Cookie', cookie)
+      .send({
+        rows: [
+          {
+            email: 'ida.updated@stmarys.edu',
+            password: '',
+            firstName: 'Ida-Updated',
+            lastName: 'Num-Updated',
+            role: 'STUDENT',
+            cardUid: 'RFID-IDNUM-002',
+            gradeLevel: 'Grade 8',
+            section: 'Sapphire',
+            schoolIdNumber: 'STU-500'
+          }
+        ]
+      });
+
+    expect(secondImport.status).toBe(201);
+    expect(secondImport.body.created).toHaveLength(0);
+    expect(secondImport.body.updated).toHaveLength(1);
+    expect(secondImport.body.updated[0]).toMatchObject({
+      id: userId,
+      email: 'ida.updated@stmarys.edu',
+      firstName: 'Ida-Updated',
+      lastName: 'Num-Updated',
+      cardUid: 'RFID-IDNUM-002',
+      gradeLevel: 'Grade 8',
+      section: 'Sapphire',
+      schoolIdNumber: 'STU-500'
+    });
+
+    const afterBlankPasswordUpdate = await repositories.userRepository.findById(userId);
+    expect(afterBlankPasswordUpdate?.passwordHash).toBe(originalHash);
+
+    const thirdImport = await request(app)
+      .post('/api/admin/schools/school-st-marys/users/import')
+      .set('Cookie', cookie)
+      .send({
+        rows: [
+          {
+            email: 'ida.updated@stmarys.edu',
+            password: 'NewPassword123!',
+            firstName: 'Ida-Updated',
+            lastName: 'Num-Updated',
+            role: 'STUDENT',
+            cardUid: 'RFID-IDNUM-002',
+            gradeLevel: 'Grade 8',
+            section: 'Sapphire',
+            schoolIdNumber: 'STU-500'
+          }
+        ]
+      });
+
+    expect(thirdImport.status).toBe(201);
+    expect(thirdImport.body.updated).toHaveLength(1);
+    expect(thirdImport.body.updated[0].id).toBe(userId);
+
+    const afterPasswordChange = await repositories.userRepository.findById(userId);
+    expect(afterPasswordChange?.passwordHash).not.toBe(originalHash);
+    await expect(bcrypt.compare('NewPassword123!', afterPasswordChange!.passwordHash)).resolves.toBe(true);
+  });
+
+  it('rejects an import row whose schoolIdNumber matches one user but email/cardUid belongs to another', async () => {
+    const repositories = createRepositories(dataLayer);
+    const app = createApp(repositories);
+    const login = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!'
+    });
+    const cookie = login.headers['set-cookie'][0];
+
+    const setup = await request(app)
+      .post('/api/admin/schools/school-st-marys/users/import')
+      .set('Cookie', cookie)
+      .send({
+        rows: [
+          {
+            email: 'conflict.a@stmarys.edu',
+            password: 'Password123!',
+            firstName: 'Conflict',
+            lastName: 'A',
+            role: 'STUDENT',
+            cardUid: 'RFID-CONFLICT-A',
+            schoolIdNumber: 'STU-600'
+          },
+          {
+            email: 'conflict.b@stmarys.edu',
+            password: 'Password123!',
+            firstName: 'Conflict',
+            lastName: 'B',
+            role: 'STUDENT',
+            cardUid: 'RFID-CONFLICT-B',
+            schoolIdNumber: 'STU-601'
+          }
+        ]
+      });
+
+    expect(setup.body.created).toHaveLength(2);
+    const userA = setup.body.created.find((user: { schoolIdNumber: string }) => user.schoolIdNumber === 'STU-600');
+    const userB = setup.body.created.find((user: { schoolIdNumber: string }) => user.schoolIdNumber === 'STU-601');
+
+    const conflictImport = await request(app)
+      .post('/api/admin/schools/school-st-marys/users/import')
+      .set('Cookie', cookie)
+      .send({
+        rows: [
+          {
+            email: 'conflict.b@stmarys.edu',
+            firstName: 'Conflict',
+            lastName: 'A',
+            role: 'STUDENT',
+            schoolIdNumber: 'STU-600'
+          }
+        ]
+      });
+
+    expect(conflictImport.body.created).toHaveLength(0);
+    expect(conflictImport.body.updated).toHaveLength(0);
+    expect(conflictImport.body.errors).toEqual([
+      expect.objectContaining({
+        row: 2,
+        message: `Row matches student ID STU-600 (user ${userA.id}) but its email/card UID belongs to a different user.`
+      })
+    ]);
+
+    const unchangedA = await repositories.userRepository.findById(userA.id);
+    const unchangedB = await repositories.userRepository.findById(userB.id);
+    expect(unchangedA?.email).toBe('conflict.a@stmarys.edu');
+    expect(unchangedB?.email).toBe('conflict.b@stmarys.edu');
   });
 
   it('forbids cross-school access across all admin route families', async () => {

@@ -17,7 +17,7 @@ import {
 } from '../lib/api';
 import { useAuth } from '../providers/auth-context';
 import { useTenantContext } from '../providers/TenantContext';
-import { downloadCsvColumns, parseCsv, type CsvColumn } from '../lib/csv';
+import { downloadCsv, downloadCsvColumns, parseCsv, type CsvColumn } from '../lib/csv';
 import { canManageSchool } from '../lib/permissions';
 import { UserForm, type UserImageMode } from '../components/forms/UserForm';
 import { createEmptyUserForm, toUserFormState, type UserFormState } from '../components/forms/userFormState';
@@ -47,6 +47,36 @@ const importHeaders = [
   'phoneNumber',
   'linkedStudentEmails'
 ] as const;
+const importTemplateRows = [
+  [
+    'jane.student@example.edu',
+    'ChangeMe123!',
+    'Jane',
+    'Student',
+    'STUDENT',
+    '04A1B2C3',
+    'Grade 10',
+    'S-10234',
+    'Section A',
+    '123 Sample Street',
+    '+1 555 0100',
+    ''
+  ],
+  [
+    'gary.guardian@example.edu',
+    'ChangeMe123!',
+    'Gary',
+    'Guardian',
+    'GUARDIAN',
+    '',
+    '',
+    '',
+    '',
+    '456 Sample Avenue',
+    '+1 555 0101',
+    'jane.student@example.edu;another.student@example.edu'
+  ]
+];
 const emptyUserFilters = {
   role: '',
   status: ''
@@ -649,7 +679,9 @@ export const UserManagementPage = () => {
       setImportResult(result);
       setReloadToken((token) => token + 1);
       setNotice(
-        `Imported ${result.created.length} user${result.created.length === 1 ? '' : 's'}${
+        `Imported ${result.created.length} new, updated ${result.updated.length} existing user${
+          result.created.length + result.updated.length === 1 ? '' : 's'
+        }${
           result.errors.length ? `; ${result.errors.length} row${result.errors.length === 1 ? '' : 's'} need attention` : ''
         }.`
       );
@@ -912,18 +944,24 @@ export const UserManagementPage = () => {
             <div>
               <strong>Start with the template</strong>
               <p>
-                Keep the headers unchanged. Use ADMIN, STAFF, STUDENT, or GUARDIAN for role.
-                Separate multiple guardian-linked student emails with semicolons.
+                Keep the headers unchanged and in order. <code>role</code> must be ADMIN, STAFF,
+                STUDENT, or GUARDIAN. <code>password</code> is a required temporary password for
+                each row. <code>linkedStudentEmails</code> only applies to GUARDIAN rows — separate
+                multiple linked student emails with semicolons. All other columns
+                (<code>cardUid</code>, <code>gradeLevel</code>, <code>schoolIdNumber</code>,{' '}
+                <code>section</code>, <code>address</code>, <code>phoneNumber</code>) are optional.
               </p>
             </div>
-            <a
+            <button
+              type="button"
               className="secondary-button secondary-button--link"
-              href="/templates/people-import-template.csv"
-              download
+              onClick={() =>
+                downloadCsv('user-import-template.csv', [...importHeaders], importTemplateRows)
+              }
             >
               <Download size={16} aria-hidden="true" />
               Download template
-            </a>
+            </button>
           </div>
           <label className="field upload-field">
             <span>Completed CSV file</span>
@@ -945,7 +983,7 @@ export const UserManagementPage = () => {
           ) : null}
           {importResult?.errors.length ? (
             <div className="import-errors" role="status">
-              <strong>{importResult.created.length} imported; review these rows:</strong>
+              <strong>{importResult.created.length} imported, {importResult.updated.length} updated; review these rows:</strong>
               <ul>
                 {importResult.errors.slice(0, 12).map((rowError) => (
                   <li key={`${rowError.row}-${rowError.message}`}>
