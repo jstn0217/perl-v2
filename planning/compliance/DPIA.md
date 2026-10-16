@@ -173,7 +173,7 @@ Technical controls implemented and tested:
 - credential hashes excluded from portability exports
 - append-only, school-scoped audit records for sensitive admin, export, erasure, backup, and restore operations
 - school-scoped backup validation and restore tests
-- dependency audit CI gate for HIGH/CRITICAL findings
+- dependency audit for HIGH/CRITICAL findings (`npm run audit:check`), run manually before each deploy while CI is disabled
 
 ## 9. Risk Assessment
 

@@ -168,8 +168,8 @@ the in-app profile/password flow. The env values are bootstrap-only.
   `localStorage`. Use dedicated kiosk devices/browsers, and rotate the device key from
   the admin UI if a kiosk machine is compromised. A server-side kiosk session is the
   planned fix.
-- **No CD pipeline.** `.github/workflows/ci.yml` runs lint/tests/build/audit only;
-  deployment is the manual procedure above.
+- **No CI/CD pipeline.** The GitHub Actions workflow is removed for now; run lint, tests,
+  build, and `npm run audit:check` locally before deploying with the manual procedure above.
 - **School restore is not transactional.** The per-school restore feature deletes and
   recreates records in separate calls; a crash mid-restore can leave partial state. Take
   a `pg_dump` before using restore against production data.
