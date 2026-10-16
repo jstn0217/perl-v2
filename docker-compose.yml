@@ -8,7 +8,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      NODE_ENV: ${NODE_ENV:-development}
+      NODE_ENV: ${NODE_ENV:?NODE_ENV must be set}
       PORT: ${PORT:-4000}
       DATA_LAYER: ${DATA_LAYER:-mock}
       IMAGE_STORAGE: ${IMAGE_STORAGE:-mock}

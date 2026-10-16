@@ -9,6 +9,11 @@ export const resetMockDevices = () => {
   mockDevices = createMockDevices();
 };
 
+// Production must not boot with the sample devices/keys baked into seeds.ts.
+export const clearMockDevices = () => {
+  mockDevices = [];
+};
+
 const compareDevicesByField = (
   field: string,
   a: { device: DeviceRecord; index: number },

@@ -1,6 +1,6 @@
-# PERL Rebuild
+# Perfect Learning (AMoS) Rebuild
 
-This repo contains the mock-first PERL rebuild described in `CLAUDE.md`.
+This repo contains the mock-first Perfect Learning (AMoS) rebuild described in `CLAUDE.md`.
 
 ## Apps
 
@@ -228,6 +228,31 @@ node perl-api/scripts/simulate-device-scan.mjs \
 ```
 
 The live screen should then show the student result with scanner **St. Mary's Front Gate** and its saved location. A scanner registered under another school will not publish into this monitor, and a revoked or rotated old key will be rejected.
+
+## Demo account
+
+The seeded sample schools above (`st-marys`, `riverside-tech`, `golden-harvest`) are for
+local mock-data development only and are cleared outside `development`/`test`. For a
+persistent, presentable demo tenant — on either `DATA_LAYER=mock` or `DATA_LAYER=db` —
+opt in with `SEED_DEMO_TENANT=true`:
+
+```text
+SEED_DEMO_TENANT=true
+DEMO_SCHOOL_NAME=Perfect Learning Demo Academy   # default; override to customize
+DEMO_SCHOOL_SLUG=perl-demo                       # default; must stay unique
+DEMO_ADMIN_EMAIL=demo-admin@example.com          # required when the flag is on
+DEMO_ADMIN_PASSWORD=<required; minimum 12 characters in production>
+```
+
+Seeding is idempotent by `DEMO_SCHOOL_SLUG` — re-running it (including via
+`npm run db:seed` in `perl-api`) skips creation if a school with that slug already
+exists, so it's safe to leave the flag set across restarts/redeploys. It works
+identically against the mock and database repositories. Production boots never create
+the sample schools above; the demo tenant is the only non-platform account production
+seeding will create, and only when `SEED_DEMO_TENANT=true`.
+
+See `DEPLOYMENT.md` §2/§5 for the full production bootstrap reference, including the
+platform superadmin/support accounts (`INITIAL_SYSTEM_ADMIN_*` / `INITIAL_SUPPORT_*`).
 
 ## Current phase
 

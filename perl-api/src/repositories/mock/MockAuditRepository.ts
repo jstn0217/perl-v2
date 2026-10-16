@@ -3,6 +3,10 @@ import type { IAuditRepository } from '../interfaces/IAuditRepository.js';
 
 let auditRecords: AuditRecord[] = [];
 
+// Hard cap on unbounded whole-school reads (findAll). Mirrors
+// AUDIT_UNBOUNDED_READ_CAP in DbAuditRepository.
+const AUDIT_UNBOUNDED_READ_CAP = 5000;
+
 export const resetMockAuditRecords = () => {
   auditRecords = [];
 };
@@ -18,9 +22,12 @@ export class MockAuditRepository implements IAuditRepository {
   }
 
   async findAll(schoolId?: string): Promise<AuditRecord[]> {
-    return schoolId
+    // Records are unshifted on create, so the array is already newest-first;
+    // slicing from the front caps at the most recent entries.
+    const records = schoolId
       ? auditRecords.filter((record) => record.schoolId === schoolId)
-      : [...auditRecords];
+      : auditRecords;
+    return records.slice(0, AUDIT_UNBOUNDED_READ_CAP);
   }
 
   async listBySchool(schoolId: string, page: number, pageSize: number): Promise<AuditPage> {

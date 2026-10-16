@@ -5,8 +5,9 @@ export interface SchoolTheme {
 }
 
 import type { FeatureKey } from './SchoolFeature.js';
+import type { AddressFields } from './Address.js';
 
-export interface SchoolProfile {
+export interface SchoolProfile extends AddressFields {
   id: string;
   slug: string;
   name: string;
@@ -17,7 +18,6 @@ export interface SchoolProfile {
   smsEnabled: boolean;
   smsSenderName: string | null;
   features: Record<FeatureKey, boolean>;
-  address: string | null;
   phone: string | null;
   timezone: string;
   academicYearLabel: string | null;

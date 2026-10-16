@@ -17,7 +17,7 @@ import { useAuth } from '../providers/auth-context';
 import { useTenantContext } from '../providers/TenantContext';
 import type { ManagedDevice, RegisteredDeviceResponse } from '../types/admin';
 import { downloadCsvColumns, type CsvColumn } from '../lib/csv';
-import { canManageSchool } from '../lib/permissions';
+import { canManageSchoolResources } from '../lib/permissions';
 import { formatRelativeTime } from '../lib/relativeTime';
 
 type DeviceFormState = {
@@ -50,7 +50,7 @@ const createEmptyForm = (): DeviceFormState => ({
 export const DeviceManagementPage = () => {
   const { user } = useAuth();
   const { activeSchool } = useTenantContext();
-  const canEdit = canManageSchool(user?.role);
+  const canEdit = canManageSchoolResources(user?.role);
   const query = useListQueryState({
     pageSize: DEVICE_PAGE_SIZE,
     defaultSort: 'name',
@@ -281,7 +281,7 @@ export const DeviceManagementPage = () => {
                 <Plus size={16} aria-hidden="true" />
                 Register scanner
               </button> : (
-                <span className="status-pill status-pill--muted">Read-only support view</span>
+                <span className="status-pill status-pill--muted">Read-only view</span>
               )}
             </div>
           </div>

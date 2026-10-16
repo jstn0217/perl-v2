@@ -3,7 +3,12 @@ import type { RepositorySet } from '../repositories/index.js';
 import { createAuthController } from '../controllers/authController.js';
 import { AuthService } from '../services/AuthService.js';
 import { attachSessionUser, requireAuth } from '../middleware/authMiddleware.js';
-import { createRateLimiter, resolveLoginRateLimitKey } from '../middleware/rateLimitMiddleware.js';
+import {
+  createRateLimiter,
+  resolveLoginRateLimitKey,
+  resolveLoginIpRateLimitKey,
+  LOGIN_IP_RATE_LIMIT_MAX_ATTEMPTS
+} from '../middleware/rateLimitMiddleware.js';
 import { env } from '../config/env.js';
 
 export const createAuthRoutes = (repositories: RepositorySet) => {
@@ -19,6 +24,12 @@ export const createAuthRoutes = (repositories: RepositorySet) => {
     key: resolveLoginRateLimitKey,
     message: 'Too many login attempts. Please try again later.'
   });
+  const loginIpRateLimiter = createRateLimiter({
+    windowMs: env.rateLimits.loginWindowMs,
+    maxRequests: LOGIN_IP_RATE_LIMIT_MAX_ATTEMPTS,
+    key: resolveLoginIpRateLimitKey,
+    message: 'Too many login attempts from this network. Please try again later.'
+  });
   const profileRateLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000,
     maxRequests: 5,
@@ -26,7 +37,7 @@ export const createAuthRoutes = (repositories: RepositorySet) => {
     message: 'Too many profile update attempts. Please try again later.'
   });
 
-  router.post('/auth/login', loginRateLimiter, controller.login);
+  router.post('/auth/login', loginIpRateLimiter, loginRateLimiter, controller.login);
   router.post('/auth/logout', controller.logout);
   router.get('/auth/session', attachSessionUser(authService), controller.getSession);
   router.patch('/auth/profile', requireAuth(authService), profileRateLimiter, controller.updateProfile);

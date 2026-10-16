@@ -5,8 +5,8 @@ WORKDIR /app
 COPY perl-api/package*.json ./perl-api/
 COPY perl-rfid-frontend/package*.json ./perl-rfid-frontend/
 
-RUN cd perl-api && npm ci
-RUN cd perl-rfid-frontend && npm ci
+RUN cd perl-api && npm install
+RUN cd perl-rfid-frontend && npm install
 
 COPY . .
 

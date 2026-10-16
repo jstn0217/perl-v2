@@ -10,6 +10,7 @@ import {
   sendCsvColumnDownload,
   type CsvColumn
 } from '../utils/csv.js';
+import { DomainError } from '../utils/errors.js';
 
 const userRoles: UserRole[] = [
   'ADMIN',
@@ -19,7 +20,7 @@ const userRoles: UserRole[] = [
   'SYSTEM_ADMIN',
   'SUPPORT'
 ];
-const targetTypes: AuditRecord['targetType'][] = ['SCHOOL', 'USER', 'DEVICE'];
+const targetTypes: AuditRecord['targetType'][] = ['SCHOOL', 'USER', 'DEVICE', 'ROLE', 'SUBMISSION'];
 const auditExportColumns: CsvColumn<AuditRecord>[] = [
   { key: 'occurredAt', label: 'Occurred at', value: (record) => record.occurredAt },
   { key: 'schoolId', label: 'School ID', value: (record) => record.schoolId },
@@ -51,21 +52,21 @@ export const readAuditFilters = (query: Request['query']): AuditFilters => {
   const to = readText(query.to);
 
   if (action && !auditActions.includes(action as (typeof auditActions)[number])) {
-    throw new Error('Invalid audit action filter.');
+    throw new DomainError('Invalid audit action filter.');
   }
   if (actorRole && !userRoles.includes(actorRole as UserRole)) {
-    throw new Error('Invalid audit actor filter.');
+    throw new DomainError('Invalid audit actor filter.');
   }
   if (targetType && !targetTypes.includes(targetType as AuditRecord['targetType'])) {
-    throw new Error('Invalid audit target filter.');
+    throw new DomainError('Invalid audit target filter.');
   }
   if (support && !['true', 'false'].includes(support)) {
-    throw new Error('Invalid support-origin filter.');
+    throw new DomainError('Invalid support-origin filter.');
   }
-  if (from && Number.isNaN(Date.parse(from))) throw new Error('Invalid audit start date.');
-  if (to && Number.isNaN(Date.parse(to))) throw new Error('Invalid audit end date.');
+  if (from && Number.isNaN(Date.parse(from))) throw new DomainError('Invalid audit start date.');
+  if (to && Number.isNaN(Date.parse(to))) throw new DomainError('Invalid audit end date.');
   if (from && to && Date.parse(from) > Date.parse(to)) {
-    throw new Error('Audit start date must be before the end date.');
+    throw new DomainError('Audit start date must be before the end date.');
   }
 
   return {

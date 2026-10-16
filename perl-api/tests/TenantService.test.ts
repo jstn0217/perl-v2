@@ -47,7 +47,12 @@ describeForDataLayers('TenantService.getCurrentSchool', (dataLayer) => {
       contactEmail: 'admin@northview.edu',
       logoUrl: null,
       theme: input.theme,
-      address: null,
+      addressLine1: null,
+      addressLine2: null,
+      barangay: null,
+      city: null,
+      province: null,
+      zipCode: null,
       phone: null,
       timezone: 'Asia/Manila',
       academicYearLabel: null,
@@ -60,7 +65,7 @@ describeForDataLayers('TenantService.getCurrentSchool', (dataLayer) => {
     const service = new TenantService(createRepositories(dataLayer).tenantRepository);
 
     await expect(service.getCurrentSchool('st-marys')).resolves.toMatchObject({
-      address: expect.stringContaining('Makati City'),
+      city: 'Makati City',
       phone: expect.any(String),
       timezone: 'Asia/Manila',
       academicYearLabel: 'SY 2025-2026',

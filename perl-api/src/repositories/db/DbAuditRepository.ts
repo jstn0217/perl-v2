@@ -3,9 +3,14 @@ import type { AuditAction, AuditPage, AuditRecord } from '../../types/Audit.js';
 import type { UserRole } from '../../types/User.js';
 import { getDbPool } from './pool.js';
 
+// Hard cap on unbounded whole-school reads (findAll, used by filtered listing/
+// export). Mirrors ATTENDANCE_UNBOUNDED_READ_CAP in DbAttendanceRepository.
+// Prevents a single request from loading a school's entire audit history.
+const AUDIT_UNBOUNDED_READ_CAP = 5000;
+
 interface AuditRow {
   id: string;
-  school_id: string;
+  school_id: string | null;
   actor_user_id: string;
   actor_role: UserRole;
   support_initiated: boolean;
@@ -55,13 +60,16 @@ export class DbAuditRepository implements IAuditRepository {
 
   async findAll(schoolId?: string): Promise<AuditRecord[]> {
     const whereClause = schoolId ? 'WHERE school_id = $1' : '';
+    const limitPlaceholder = schoolId ? '$2' : '$1';
+    const parameters = schoolId ? [schoolId, AUDIT_UNBOUNDED_READ_CAP] : [AUDIT_UNBOUNDED_READ_CAP];
     const { rows } = await getDbPool().query<AuditRow>(
       `SELECT id, school_id, actor_user_id, actor_role, support_initiated, action,
               target_type, target_id, change_summary, occurred_at
        FROM audit_logs
        ${whereClause}
-       ORDER BY occurred_at DESC, created_at DESC, id DESC`,
-      schoolId ? [schoolId] : []
+       ORDER BY occurred_at DESC, created_at DESC, id DESC
+       LIMIT ${limitPlaceholder}`,
+      parameters
     );
     return rows.map(mapAuditRow);
   }

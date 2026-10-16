@@ -12,13 +12,11 @@ import {
   sendCsvColumnDownload,
   type CsvColumn
 } from '../utils/csv.js';
-import {
-  isPlatformRole,
-  liveMonitorRoles,
-  monitorDiagnosticRoles
-} from '../auth/permissions.js';
+import { isPlatformRole, monitorDiagnosticRoles } from '../auth/permissions.js';
+import { resolveUserPermissions } from '../auth/rolePermissions.js';
 import type { ISmsGateway } from '../notifications/index.js';
 import { NotificationService } from '../services/NotificationService.js';
+import { DomainError, handleControllerError } from '../utils/errors.js';
 
 const resolvePositiveInt = (value: unknown, fallback: number) => {
   const parsed =
@@ -40,19 +38,19 @@ const readAttendanceFilters = (query: Request['query']): AttendanceFilters => {
   const to = readText(query.to);
 
   if (verdict && !['ADMITTED', 'DENIED'].includes(verdict)) {
-    throw new Error('Invalid attendance verdict filter.');
+    throw new DomainError('Invalid attendance verdict filter.');
   }
   if (direction && !['IN', 'OUT'].includes(direction)) {
-    throw new Error('Invalid attendance direction filter.');
+    throw new DomainError('Invalid attendance direction filter.');
   }
   if (from && Number.isNaN(Date.parse(from))) {
-    throw new Error('Invalid attendance start date.');
+    throw new DomainError('Invalid attendance start date.');
   }
   if (to && Number.isNaN(Date.parse(to))) {
-    throw new Error('Invalid attendance end date.');
+    throw new DomainError('Invalid attendance end date.');
   }
   if (from && to && Date.parse(from) > Date.parse(to)) {
-    throw new Error('Attendance start date must be before the end date.');
+    throw new DomainError('Attendance start date must be before the end date.');
   }
 
   return {
@@ -146,7 +144,7 @@ export const createAttendanceController = (
     const currentUser = req.currentUser;
 
     if (!currentUser) {
-      throw new Error('Authentication required.');
+      throw new DomainError('Authentication required.', 401);
     }
 
     const schoolSlug = typeof req.query.school === 'string' ? req.query.school : undefined;
@@ -156,7 +154,7 @@ export const createAttendanceController = (
     }
 
     if (!schoolSlug) {
-      throw new Error('School context is required.');
+      throw new DomainError('School context is required.');
     }
 
     const school = await tenantService.getCurrentSchool(schoolSlug);
@@ -240,10 +238,7 @@ export const createAttendanceController = (
 
         return res.status(result.verdict === 'ADMITTED' ? 200 : 400).json(result);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to process scan.';
-        const status = message === 'Invalid device key.' ? 401 : 400;
-
-        return res.status(status).json({ message });
+        return handleControllerError(res, error, 'attendanceController.scanCard');
       }
     },
 
@@ -277,8 +272,7 @@ export const createAttendanceController = (
         schoolId = await resolveAuthorizedSchoolId(req);
         filters = readAttendanceFilters(req.query);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to load attendance logs.';
-        return res.status(message === 'Authentication required.' ? 401 : 400).json({ message });
+        return handleControllerError(res, error, 'attendanceController.listLogs');
       }
 
       const page = resolvePositiveInt(req.query.page, 1);
@@ -307,9 +301,7 @@ export const createAttendanceController = (
 
         return res.json(payload);
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to load attendance logs.'
-        });
+        return handleControllerError(res, error, 'attendanceController.listLogs');
       }
     },
 
@@ -342,14 +334,18 @@ export const createAttendanceController = (
           records
         );
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to export attendance logs.'
-        });
+        return handleControllerError(res, error, 'attendanceController.exportLogs');
       }
     },
 
     async streamEvents(req: Request, res: Response) {
-      if (!req.currentUser || !liveMonitorRoles.includes(req.currentUser.role)) {
+      if (!req.currentUser) {
+        return res.status(403).json({ message: 'Live attendance monitoring is staff-only.' });
+      }
+
+      const permissions = await resolveUserPermissions(req.currentUser, repositories.roleRepository);
+
+      if (!permissions.includes('monitor.live')) {
         return res.status(403).json({ message: 'Live attendance monitoring is staff-only.' });
       }
 
@@ -358,9 +354,7 @@ export const createAttendanceController = (
       try {
         schoolId = await resolveAuthorizedSchoolId(req);
       } catch (error) {
-        return res.status(error instanceof Error && error.message === 'Forbidden.' ? 403 : 401).json({
-          message: error instanceof Error ? error.message : 'Authentication required.'
-        });
+        return handleControllerError(res, error, 'attendanceController.streamEvents');
       }
 
       if (isPlatformRole(req.currentUser.role)) {

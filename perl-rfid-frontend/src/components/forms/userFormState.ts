@@ -12,9 +12,15 @@ export type UserFormState = {
   section: string;
   imageUrl: string;
   phoneNumber: string;
-  address: string;
+  addressLine1: string;
+  addressLine2: string;
+  barangay: string;
+  city: string;
+  province: string;
+  zipCode: string;
   linkedStudentIds: string[];
   linkedGuardianIds: string[];
+  roleDefinitionId: string | null;
 };
 
 export const createEmptyUserForm = (): UserFormState => ({
@@ -29,9 +35,15 @@ export const createEmptyUserForm = (): UserFormState => ({
   section: '',
   imageUrl: '',
   phoneNumber: '',
-  address: '',
+  addressLine1: '',
+  addressLine2: '',
+  barangay: '',
+  city: '',
+  province: '',
+  zipCode: '',
   linkedStudentIds: [],
-  linkedGuardianIds: []
+  linkedGuardianIds: [],
+  roleDefinitionId: null
 });
 
 export const toUserFormState = (user: ManagedUser): UserFormState => ({
@@ -46,7 +58,13 @@ export const toUserFormState = (user: ManagedUser): UserFormState => ({
   section: user.section ?? '',
   imageUrl: user.imageUrl ?? '',
   phoneNumber: user.phoneNumber ?? '',
-  address: user.address ?? '',
+  addressLine1: user.addressLine1 ?? '',
+  addressLine2: user.addressLine2 ?? '',
+  barangay: user.barangay ?? '',
+  city: user.city ?? '',
+  province: user.province ?? '',
+  zipCode: user.zipCode ?? '',
   linkedStudentIds: user.linkedStudentIds,
-  linkedGuardianIds: []
+  linkedGuardianIds: [],
+  roleDefinitionId: user.roleDefinitionId ?? null
 });

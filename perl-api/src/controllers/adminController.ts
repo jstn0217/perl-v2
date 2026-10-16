@@ -10,6 +10,7 @@ import { SchoolDataService } from '../services/SchoolDataService.js';
 import { ImageService } from '../services/ImageService.js';
 import { readAuditFilters, sendAuditCsv } from './auditQuery.js';
 import { isPlatformRole } from '../auth/permissions.js';
+import { DomainError, handleControllerError } from '../utils/errors.js';
 
 const readRouteParam = (value: string | string[] | undefined) => {
   return typeof value === 'string' ? value : null;
@@ -43,7 +44,11 @@ const readSearch = (value: unknown) =>
 const readSort = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 
 export const createAdminController = (repositories: RepositorySet, imageStorage: IImageStorage) => {
-  const adminService = new AdminService(repositories.tenantRepository, repositories.userRepository);
+  const adminService = new AdminService(
+    repositories.tenantRepository,
+    repositories.userRepository,
+    repositories.roleRepository
+  );
   const auditService = new AuditService(repositories.auditRepository);
   const deviceService = new DeviceService(repositories.deviceRepository);
   const imageService = new ImageService(
@@ -56,7 +61,8 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
     repositories.userRepository,
     repositories.deviceRepository,
     repositories.attendanceRepository,
-    repositories.auditRepository
+    repositories.auditRepository,
+    repositories.submissionRepository
   );
   const recordAudit = async (
     req: Request,
@@ -67,7 +73,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
     explicitSummary?: string
   ) => {
     const actor = req.currentUser;
-    if (!actor) throw new Error('Authentication required.');
+    if (!actor) throw new DomainError('Authentication required.', 401);
     const changedFields =
       req.body && typeof req.body === 'object'
         ? Object.keys(req.body).filter(
@@ -105,9 +111,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
 
         return res.json(summary);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to load school summary.';
-
-        return res.status(message === 'School not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.getSchoolSummary');
       }
     },
 
@@ -124,9 +128,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
 
         return res.json({ school });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to load school profile.';
-
-        return res.status(message === 'School not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.getSchoolProfile');
       }
     },
 
@@ -143,10 +145,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
 
         return res.json({ school });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to update school profile.';
-        const status = message === 'School not found.' ? 404 : 400;
-
-        return res.status(status).json({ message });
+        return handleControllerError(res, error, 'adminController.updateSchoolProfile');
       }
     },
 
@@ -163,8 +162,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         await recordAudit(req, schoolId, 'SCHOOL_LOGO_UPDATED', 'SCHOOL', schoolId);
         return res.json({ school });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to upload school logo.';
-        return res.status(message === 'School not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.uploadSchoolLogo');
       }
     },
 
@@ -193,9 +191,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
 
         return res.json({ users: items, total, page, pageSize });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to load users.';
-
-        return res.status(message === 'School not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.listUsers');
       }
     },
 
@@ -212,10 +208,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
 
         return res.status(201).json({ user });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to create user.';
-        const status = message === 'School not found.' ? 404 : 400;
-
-        return res.status(status).json({ message });
+        return handleControllerError(res, error, 'adminController.createUser');
       }
     },
 
@@ -235,9 +228,14 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         );
         return res.status(result.errors.length > 0 ? 207 : 201).json(result);
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to import school users.'
-        });
+        // Import validation failures (missing school, bad row count) are always
+        // reported as 400 here, regardless of the underlying DomainError's own
+        // status code, to match this route's existing contract.
+        if (error instanceof DomainError) {
+          return res.status(400).json({ message: error.message });
+        }
+        console.error('[adminController.importUsers]', error);
+        return res.status(500).json({ error: 'Internal server error' });
       }
     },
 
@@ -255,10 +253,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
 
         return res.json({ user });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to update user.';
-        const status = message === 'User not found.' || message === 'School not found.' ? 404 : 400;
-
-        return res.status(status).json({ message });
+        return handleControllerError(res, error, 'adminController.updateUser');
       }
     },
 
@@ -278,8 +273,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         await recordAudit(req, schoolId, 'USER_IMAGE_UPDATED', 'USER', userId);
         return res.json({ user });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to upload user image.';
-        return res.status(message === 'User not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.uploadUserImage');
       }
     },
 
@@ -302,10 +296,76 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
 
         return res.json({ user });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to deactivate user.';
-        const status = message === 'User not found.' || message === 'School not found.' ? 404 : 400;
+        return handleControllerError(res, error, 'adminController.deactivateUser');
+      }
+    },
 
-        return res.status(status).json({ message });
+    async reactivateUser(req: Request, res: Response) {
+      try {
+        const schoolId = readRouteParam(req.params.schoolId);
+        const userId = readRouteParam(req.params.userId);
+
+        if (!schoolId || !userId) {
+          return res.status(400).json({ message: 'School scope and user ID are required.' });
+        }
+
+        const user = await adminService.reactivateUser(schoolId, userId);
+        await recordAudit(req, schoolId, 'USER_REACTIVATED', 'USER', userId);
+
+        return res.json({ user });
+      } catch (error) {
+        return handleControllerError(res, error, 'adminController.reactivateUser');
+      }
+    },
+
+    async bulkSetUserStatus(req: Request, res: Response) {
+      try {
+        const actorUserId = req.currentUser?.id;
+        const schoolId = readRouteParam(req.params.schoolId);
+
+        if (!actorUserId) {
+          return res.status(401).json({ message: 'Authentication required.' });
+        }
+
+        if (!schoolId) {
+          return res.status(400).json({ message: 'School scope is required.' });
+        }
+
+        const userIds = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+        const isActive = req.body?.isActive === true;
+
+        const result = await adminService.bulkSetUserStatus(schoolId, userIds, isActive, actorUserId);
+        await recordAudit(
+          req,
+          schoolId,
+          isActive ? 'USER_REACTIVATED' : 'USER_DEACTIVATED',
+          'SCHOOL',
+          schoolId,
+          `Bulk ${isActive ? 'activated' : 'deactivated'} ${result.updated.length} user(s); ${
+            result.errors.length
+          } failed`
+        );
+
+        return res.json(result);
+      } catch (error) {
+        return handleControllerError(res, error, 'adminController.bulkSetUserStatus');
+      }
+    },
+
+    async listAssignableRoles(req: Request, res: Response) {
+      try {
+        const schoolId = readRouteParam(req.params.schoolId);
+
+        if (!schoolId) {
+          return res.status(400).json({ message: 'School scope is required.' });
+        }
+
+        const roles = await adminService.listAssignableRoles();
+        await recordCrossSchoolRead(req, schoolId, 'Viewed assignable roles');
+
+        return res.json({ roles });
+      } catch (error) {
+        return handleControllerError(res, error, 'adminController.listAssignableRoles');
       }
     },
 
@@ -333,9 +393,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
 
         return res.json({ devices: items, total, page, pageSize });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to load devices.';
-
-        return res.status(400).json({ message });
+        return handleControllerError(res, error, 'adminController.listDevices');
       }
     },
 
@@ -357,9 +415,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
 
         return res.status(201).json(registeredDevice);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to register device.';
-
-        return res.status(400).json({ message });
+        return handleControllerError(res, error, 'adminController.registerDevice');
       }
     },
 
@@ -375,8 +431,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         await recordAudit(req, schoolId, 'DEVICE_KEY_ROTATED', 'DEVICE', deviceId);
         return res.json(registeredDevice);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to rotate device key.';
-        return res.status(message === 'Device not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.rotateDeviceKey');
       }
     },
 
@@ -392,8 +447,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         await recordAudit(req, schoolId, 'DEVICE_DEACTIVATED', 'DEVICE', deviceId);
         return res.json({ device });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to deactivate device.';
-        return res.status(message === 'Device not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.deactivateDevice');
       }
     },
 
@@ -406,8 +460,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         res.setHeader('Content-Disposition', `attachment; filename="${schoolId}-export.json"`);
         return res.json(data);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to export school data.';
-        return res.status(message === 'School not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.exportSchoolData');
       }
     },
 
@@ -420,8 +473,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         res.setHeader('Content-Disposition', `attachment; filename="${schoolId}-backup.json"`);
         return res.json(data);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to create school backup.';
-        return res.status(message === 'School not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.backupSchoolData');
       }
     },
 
@@ -437,8 +489,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         res.setHeader('Content-Disposition', `attachment; filename="${userId}-export.json"`);
         return res.json(data);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to export user data.';
-        return res.status(message === 'School not found.' || message === 'User not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.exportUserData');
       }
     },
 
@@ -461,8 +512,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         await recordAudit(req, schoolId, 'USER_DATA_ERASED', 'USER', userId);
         return res.json(result);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to erase user data.';
-        return res.status(message === 'School not found.' || message === 'User not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.deleteUserData');
       }
     },
 
@@ -476,8 +526,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         await recordAudit(req, schoolId, 'SCHOOL_DATA_ERASED', 'SCHOOL', schoolId);
         return res.json(result);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to delete school data.';
-        return res.status(message === 'School not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.deleteSchoolData');
       }
     },
 
@@ -490,11 +539,11 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         return res.json({ restored: true, counts: {
           users: data.users.length,
           devices: data.devices.length,
-          attendanceLogs: data.attendanceLogs.length
+          attendanceLogs: data.attendanceLogs.length,
+          submissions: data.submissions.length
         }});
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to restore school data.';
-        return res.status(message === 'School not found.' ? 404 : 400).json({ message });
+        return handleControllerError(res, error, 'adminController.restoreSchoolData');
       }
     },
 
@@ -515,9 +564,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
         await recordCrossSchoolRead(req, schoolId, 'Viewed school audit logs');
         return res.json(auditPage);
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to load audit logs.'
-        });
+        return handleControllerError(res, error, 'adminController.listAuditLogs');
       }
     },
 
@@ -536,9 +583,7 @@ export const createAdminController = (repositories: RepositorySet, imageStorage:
           req.query.columns
         );
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to export audit logs.'
-        });
+        return handleControllerError(res, error, 'adminController.exportAuditLogs');
       }
     }
   };

@@ -9,6 +9,12 @@ export const resetMockUsers = () => {
   mockUsers = createMockUsers();
 };
 
+// Production must not boot with the public sample users (password 'Password123!') baked
+// into seeds.ts.
+export const clearMockUsers = () => {
+  mockUsers = [];
+};
+
 const compareUsersByField = (
   field: string,
   a: { user: UserRecord; index: number },
@@ -200,5 +206,9 @@ export class MockUserRepository implements IUserRepository {
     const before = mockUsers.length;
     mockUsers = mockUsers.filter((user) => user.schoolId !== schoolId || user.id === userId);
     return before - mockUsers.length;
+  }
+
+  async countByRoleDefinitionId(roleDefinitionId: string): Promise<number> {
+    return mockUsers.filter((user) => user.roleDefinitionId === roleDefinitionId).length;
   }
 }

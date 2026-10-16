@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Pencil, Upload, UserPlus, UserX } from 'lucide-react';
+import { Download, Pencil, Upload, UserCheck, UserPlus, UserX } from 'lucide-react';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { InlineAlert } from '../components/InlineAlert';
 import { Modal } from '../components/Modal';
@@ -8,17 +8,21 @@ import { Pagination } from '../components/Pagination';
 import { useListQueryState } from '../hooks/useListQueryState';
 import { useServerList } from '../hooks/useServerList';
 import {
+  bulkSetAdminUserStatus,
   createAdminUser,
   deactivateAdminUser,
   fetchAdminUsers,
+  fetchAssignableRoles,
   importAdminUsers,
+  reactivateAdminUser,
   updateAdminUser,
   uploadAdminUserImage
 } from '../lib/api';
 import { useAuth } from '../providers/auth-context';
 import { useTenantContext } from '../providers/TenantContext';
 import { downloadCsv, downloadCsvColumns, parseCsv, type CsvColumn } from '../lib/csv';
-import { canManageSchool } from '../lib/permissions';
+import { formatAddress } from '../lib/address';
+import { canManageSchoolResources } from '../lib/permissions';
 import { UserForm, type UserImageMode } from '../components/forms/UserForm';
 import { createEmptyUserForm, toUserFormState, type UserFormState } from '../components/forms/userFormState';
 import { ExportColumnSelector } from '../components/ExportColumnSelector';
@@ -30,9 +34,13 @@ import type {
   ManagedUserUpdatePayload,
   SchoolUserRole
 } from '../types/admin';
+import type { AssignableRole } from '../types/role';
 
 const roleOptions: SchoolUserRole[] = ['ADMIN', 'STAFF', 'STUDENT', 'GUARDIAN'];
 const USER_PAGE_SIZE = 8;
+// Structured address columns. The importer also accepts a single legacy `address`
+// column in place of these six, mapping it onto addressLine1 (see handleImport).
+const structuredAddressHeaders = ['addressLine1', 'addressLine2', 'barangay', 'city', 'province', 'zipCode'] as const;
 const importHeaders = [
   'email',
   'password',
@@ -43,10 +51,13 @@ const importHeaders = [
   'gradeLevel',
   'schoolIdNumber',
   'section',
-  'address',
+  ...structuredAddressHeaders,
   'phoneNumber',
   'linkedStudentEmails'
 ] as const;
+const requiredImportHeaders = importHeaders.filter(
+  (name) => !(structuredAddressHeaders as readonly string[]).includes(name)
+);
 const importTemplateRows = [
   [
     'jane.student@example.edu',
@@ -59,6 +70,11 @@ const importTemplateRows = [
     'S-10234',
     'Section A',
     '123 Sample Street',
+    '',
+    '',
+    '',
+    '',
+    '',
     '+1 555 0100',
     ''
   ],
@@ -73,6 +89,11 @@ const importTemplateRows = [
     '',
     '',
     '456 Sample Avenue',
+    '',
+    '',
+    '',
+    '',
+    '',
     '+1 555 0101',
     'jane.student@example.edu;another.student@example.edu'
   ]
@@ -138,7 +159,7 @@ const UserStatusPill = ({ user }: { user: ManagedUser }) => (
 export const UserManagementPage = () => {
   const { user: sessionUser } = useAuth();
   const { activeSchool } = useTenantContext();
-  const canEdit = canManageSchool(sessionUser?.role);
+  const canEdit = canManageSchoolResources(sessionUser?.role);
   const query = useListQueryState({
     pageSize: USER_PAGE_SIZE,
     defaultSort: 'name',
@@ -147,6 +168,7 @@ export const UserManagementPage = () => {
 
   const [studentsDirectory, setStudentsDirectory] = useState<ManagedUser[]>([]);
   const [guardiansDirectory, setGuardiansDirectory] = useState<ManagedUser[]>([]);
+  const [assignableRoles, setAssignableRoles] = useState<AssignableRole[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving'>('idle');
@@ -202,6 +224,11 @@ export const UserManagementPage = () => {
   };
 
   const [deactivateTarget, setDeactivateTarget] = useState<ManagedUser | null>(null);
+  const [reactivateTarget, setReactivateTarget] = useState<ManagedUser | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState<'activate' | 'deactivate' | null>(null);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [bulkErrors, setBulkErrors] = useState<{ userId: string; message: string }[]>([]);
 
   const listRequestKey = [
     activeSchool.id,
@@ -214,6 +241,12 @@ export const UserManagementPage = () => {
     query.filters.status,
     reloadToken
   ].join('|');
+
+  const [selectionListKey, setSelectionListKey] = useState(listRequestKey);
+  if (selectionListKey !== listRequestKey) {
+    setSelectionListKey(listRequestKey);
+    setSelectedIds(new Set());
+  }
 
   const {
     items: users,
@@ -284,6 +317,23 @@ export const UserManagementPage = () => {
     };
   }, [activeSchool.id, reloadToken, sessionUser]);
 
+  useEffect(() => {
+    if (!sessionUser) return;
+    let cancelled = false;
+
+    void fetchAssignableRoles(activeSchool.id)
+      .then((roles) => {
+        if (!cancelled) setAssignableRoles(roles);
+      })
+      .catch(() => {
+        if (!cancelled) setAssignableRoles([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSchool.id, sessionUser]);
+
   const selectedUser = useMemo(
     () => users.find((managedUser) => managedUser.id === selectedUserId) ?? null,
     [selectedUserId, users]
@@ -300,10 +350,11 @@ export const UserManagementPage = () => {
   const guardianAddressByStudentId = useMemo(() => {
     const fallbacks = new Map<string, string>();
     for (const guardian of guardiansDirectory) {
-      if (!guardian.address) continue;
+      const guardianAddress = formatAddress(guardian);
+      if (!guardianAddress) continue;
       for (const studentId of guardian.linkedStudentIds) {
         if (!fallbacks.has(studentId)) {
-          fallbacks.set(studentId, guardian.address);
+          fallbacks.set(studentId, guardianAddress);
         }
       }
     }
@@ -316,8 +367,9 @@ export const UserManagementPage = () => {
     for (const guardian of guardiansDirectory) {
       for (const studentId of guardian.linkedStudentIds) {
         const student = studentsById.get(studentId);
-        if (student?.address) {
-          fallbacks.set(guardian.id, student.address);
+        const studentAddress = student ? formatAddress(student) : '';
+        if (studentAddress) {
+          fallbacks.set(guardian.id, studentAddress);
           break;
         }
       }
@@ -327,7 +379,8 @@ export const UserManagementPage = () => {
 
   const resolveAddressValue = useCallback(
     (managedUser: ManagedUser): { text: string; fallbackTag: 'guardian' | 'student' | null } => {
-      if (managedUser.address) return { text: managedUser.address, fallbackTag: null };
+      const ownAddress = formatAddress(managedUser);
+      if (ownAddress) return { text: ownAddress, fallbackTag: null };
       if (managedUser.role === 'STUDENT') {
         const guardianAddress = guardianAddressByStudentId.get(managedUser.id);
         if (guardianAddress) return { text: guardianAddress, fallbackTag: 'guardian' };
@@ -385,7 +438,7 @@ export const UserManagementPage = () => {
   const availableTableColumns = allTableColumns.filter((column) => column.key !== 'user' || canEdit);
   const visibleTableColumnSet = new Set(visibleTableColumns);
   const shownTableColumns = availableTableColumns.filter((column) => visibleTableColumnSet.has(column.key));
-  const rowColumnCount = shownTableColumns.length + (canEdit ? 1 : 0);
+  const rowColumnCount = shownTableColumns.length + (canEdit ? 2 : 0);
 
   const renderTableCell = (managedUser: ManagedUser, key: TableColumnKey) => {
     switch (key) {
@@ -434,12 +487,14 @@ export const UserManagementPage = () => {
           </span>
         );
       }
-      case 'linkedStudents':
-        return managedUser.role === 'GUARDIAN'
-          ? managedUser.linkedStudentIds
-              .map((studentId) => studentNames.get(studentId) ?? studentId)
-              .join(', ') || 'No students linked'
-          : '—';
+      case 'linkedStudents': {
+        if (managedUser.role !== 'GUARDIAN') return '—';
+        return (
+          managedUser.linkedStudentIds
+            .map((studentId) => studentNames.get(studentId) ?? studentId)
+            .join(', ') || 'No students linked'
+        );
+      }
       default:
         return null;
     }
@@ -522,6 +577,15 @@ export const UserManagementPage = () => {
     return normalized.length > 0 ? normalized : null;
   };
 
+  const addressPayload = (state: UserFormState) => ({
+    addressLine1: normalizeOptionalField(state.addressLine1),
+    addressLine2: normalizeOptionalField(state.addressLine2),
+    barangay: normalizeOptionalField(state.barangay),
+    city: normalizeOptionalField(state.city),
+    province: normalizeOptionalField(state.province),
+    zipCode: normalizeOptionalField(state.zipCode)
+  });
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaveStatus('saving');
@@ -542,9 +606,10 @@ export const UserManagementPage = () => {
           section: normalizeOptionalField(formState.section),
           imageUrl: normalizeOptionalField(formState.imageUrl),
           phoneNumber: normalizeOptionalField(formState.phoneNumber),
-          address: normalizeOptionalField(formState.address),
+          ...addressPayload(formState),
           linkedStudentIds: formState.linkedStudentIds,
-          linkedGuardianIds: formState.role === 'STUDENT' ? formState.linkedGuardianIds : undefined
+          linkedGuardianIds: formState.role === 'STUDENT' ? formState.linkedGuardianIds : undefined,
+          roleDefinitionId: formState.roleDefinitionId
         };
 
         let createdUser = await createAdminUser(activeSchool.id, payload);
@@ -571,9 +636,10 @@ export const UserManagementPage = () => {
           section: normalizeOptionalField(formState.section),
           imageUrl: normalizeOptionalField(formState.imageUrl),
           phoneNumber: normalizeOptionalField(formState.phoneNumber),
-          address: normalizeOptionalField(formState.address),
+          ...addressPayload(formState),
           linkedStudentIds: formState.linkedStudentIds,
-          linkedGuardianIds: formState.role === 'STUDENT' ? formState.linkedGuardianIds : undefined
+          linkedGuardianIds: formState.role === 'STUDENT' ? formState.linkedGuardianIds : undefined,
+          roleDefinitionId: formState.roleDefinitionId
         };
 
         if (formState.password.trim()) {
@@ -634,6 +700,72 @@ export const UserManagementPage = () => {
     }
   };
 
+  const handleReactivate = async (managedUser: ManagedUser) => {
+    setError(null);
+    setNotice(null);
+
+    try {
+      const updatedUser = await reactivateAdminUser(activeSchool.id, managedUser.id);
+      setNotice(`${updatedUser.firstName} ${updatedUser.lastName} has been activated.`);
+      setReloadToken((token) => token + 1);
+
+      if (selectedUserId === updatedUser.id) {
+        setFormState(toUserFormState(updatedUser));
+      }
+    } catch (reactivateError) {
+      setError(
+        reactivateError instanceof Error ? reactivateError.message : 'Unable to activate this user.'
+      );
+    } finally {
+      setReactivateTarget(null);
+    }
+  };
+
+  const toggleRowSelection = (userId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllOnPage = () => {
+    const pageIds = users.map((managedUser) => managedUser.id);
+    const allSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+    setSelectedIds(allSelected ? new Set() : new Set(pageIds));
+  };
+
+  const handleBulkStatus = async () => {
+    if (!bulkAction) return;
+    const isActive = bulkAction === 'activate';
+    const userIds = [...selectedIds];
+
+    setBulkProcessing(true);
+    setError(null);
+    setNotice(null);
+    setBulkErrors([]);
+
+    try {
+      const result = await bulkSetAdminUserStatus(activeSchool.id, userIds, isActive);
+      setBulkErrors(result.errors);
+      setNotice(
+        `${result.updated.length} ${isActive ? 'activated' : 'deactivated'}${
+          result.errors.length ? `; ${result.errors.length} could not be updated` : ''
+        }.`
+      );
+      setReloadToken((token) => token + 1);
+    } catch (bulkError) {
+      setError(bulkError instanceof Error ? bulkError.message : 'Unable to update selected users.');
+    } finally {
+      setBulkProcessing(false);
+      setBulkAction(null);
+    }
+  };
+
   const handleImport = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!importFile) {
@@ -652,12 +784,38 @@ export const UserManagementPage = () => {
       const parsed = parseCsv((await importFile.text()).replace(/^\uFEFF/, ''));
       const header = parsed[0]?.map((value) => value.trim()) ?? [];
       const positions = new Map(header.map((value, index) => [value, index]));
-      const missing = importHeaders.filter((name) => !positions.has(name));
+      const missing = requiredImportHeaders.filter((name) => !positions.has(name));
       if (missing.length > 0) {
         throw new Error(`CSV is missing required columns: ${missing.join(', ')}.`);
       }
-      const read = (row: string[], name: (typeof importHeaders)[number]) =>
+      // Structured address columns are required as a full set, but a CSV exported
+      // before this feature shipped carries a single legacy `address` column
+      // instead \u2014 accept that too, mapping it onto addressLine1.
+      const hasStructuredAddress = structuredAddressHeaders.every((name) => positions.has(name));
+      const hasLegacyAddress = positions.has('address');
+      if (!hasStructuredAddress && !hasLegacyAddress) {
+        throw new Error(`CSV is missing required columns: ${structuredAddressHeaders.join(', ')}.`);
+      }
+      const read = (row: string[], name: (typeof importHeaders)[number] | 'address') =>
         row[positions.get(name) ?? -1]?.trim() ?? '';
+      const readAddressFields = (row: string[]) =>
+        hasStructuredAddress
+          ? {
+              addressLine1: read(row, 'addressLine1') || null,
+              addressLine2: read(row, 'addressLine2') || null,
+              barangay: read(row, 'barangay') || null,
+              city: read(row, 'city') || null,
+              province: read(row, 'province') || null,
+              zipCode: read(row, 'zipCode') || null
+            }
+          : {
+              addressLine1: read(row, 'address') || null,
+              addressLine2: null,
+              barangay: null,
+              city: null,
+              province: null,
+              zipCode: null
+            };
       const rows: ManagedUserImportPayload[] = parsed.slice(1).map((row) => ({
         email: read(row, 'email'),
         password: read(row, 'password'),
@@ -668,7 +826,7 @@ export const UserManagementPage = () => {
         gradeLevel: read(row, 'gradeLevel') || null,
         schoolIdNumber: read(row, 'schoolIdNumber') || null,
         section: read(row, 'section') || null,
-        address: read(row, 'address') || null,
+        ...readAddressFields(row),
         phoneNumber: read(row, 'phoneNumber') || null,
         linkedStudentEmails: read(row, 'linkedStudentEmails')
           .split(';')
@@ -779,7 +937,7 @@ export const UserManagementPage = () => {
                 New user
               </button>
             </div> : (
-              <span className="status-pill status-pill--muted">Read-only support view</span>
+              <span className="status-pill status-pill--muted">Read-only view</span>
             )}
           </div>
 
@@ -787,6 +945,18 @@ export const UserManagementPage = () => {
             <InlineAlert tone="error" message={error} />
           ) : notice ? (
             <InlineAlert message={notice} />
+          ) : null}
+          {bulkErrors.length > 0 ? (
+            <InlineAlert
+              tone="error"
+              message={`Could not update: ${bulkErrors
+                .map((rowError) => {
+                  const named = users.find((managedUser) => managedUser.id === rowError.userId);
+                  const label = named ? `${named.firstName} ${named.lastName}` : rowError.userId;
+                  return `${label} (${rowError.message})`;
+                })
+                .join('; ')}`}
+            />
           ) : null}
 
           <ListToolbar
@@ -837,10 +1007,45 @@ export const UserManagementPage = () => {
             />
           </div>
 
+          {canEdit && selectedIds.size > 0 ? (
+            <div className="bulk-action-bar" role="toolbar" aria-label="Bulk user actions">
+              <span>{selectedIds.size} selected</span>
+              <div className="table-actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => setBulkAction('activate')}
+                >
+                  <UserCheck size={16} aria-hidden="true" />
+                  Activate
+                </button>
+                <button
+                  className="secondary-button secondary-button--danger"
+                  type="button"
+                  onClick={() => setBulkAction('deactivate')}
+                >
+                  <UserX size={16} aria-hidden="true" />
+                  Deactivate
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="table-wrap">
             <table className="attendance-table">
               <thead>
                 <tr>
+                  {canEdit ? (
+                    <th scope="col">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all people on this page"
+                        checked={users.length > 0 && users.every((managedUser) => selectedIds.has(managedUser.id))}
+                        onChange={toggleSelectAllOnPage}
+                        disabled={users.length === 0}
+                      />
+                    </th>
+                  ) : null}
                   {shownTableColumns.map((column) => (
                     <th key={column.key} scope="col">{column.label}</th>
                   ))}
@@ -881,6 +1086,16 @@ export const UserManagementPage = () => {
                 ) : (
                   users.map((managedUser) => (
                     <tr key={managedUser.id}>
+                      {canEdit ? (
+                        <td data-label="Select">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${managedUser.firstName} ${managedUser.lastName}`}
+                            checked={selectedIds.has(managedUser.id)}
+                            onChange={() => toggleRowSelection(managedUser.id)}
+                          />
+                        </td>
+                      ) : null}
                       {shownTableColumns.map((column) => (
                         <td key={column.key} data-label={column.label}>
                           {renderTableCell(managedUser, column.key)}
@@ -897,15 +1112,26 @@ export const UserManagementPage = () => {
                               <Pencil size={16} aria-hidden="true" />
                               Edit
                             </button>
-                            <button
-                              className="secondary-button secondary-button--danger"
-                              type="button"
-                              disabled={!managedUser.isActive || managedUser.id === sessionUser.id}
-                              onClick={() => setDeactivateTarget(managedUser)}
-                            >
-                              <UserX size={16} aria-hidden="true" />
-                              Deactivate
-                            </button>
+                            {managedUser.isActive ? (
+                              <button
+                                className="secondary-button secondary-button--danger"
+                                type="button"
+                                disabled={managedUser.id === sessionUser.id}
+                                onClick={() => setDeactivateTarget(managedUser)}
+                              >
+                                <UserX size={16} aria-hidden="true" />
+                                Deactivate
+                              </button>
+                            ) : (
+                              <button
+                                className="secondary-button"
+                                type="button"
+                                onClick={() => setReactivateTarget(managedUser)}
+                              >
+                                <UserCheck size={16} aria-hidden="true" />
+                                Activate
+                              </button>
+                            )}
                           </div>
                         </td>
                       ) : null}
@@ -947,9 +1173,13 @@ export const UserManagementPage = () => {
                 Keep the headers unchanged and in order. <code>role</code> must be ADMIN, STAFF,
                 STUDENT, or GUARDIAN. <code>password</code> is a required temporary password for
                 each row. <code>linkedStudentEmails</code> only applies to GUARDIAN rows — separate
-                multiple linked student emails with semicolons. All other columns
-                (<code>cardUid</code>, <code>gradeLevel</code>, <code>schoolIdNumber</code>,{' '}
-                <code>section</code>, <code>address</code>, <code>phoneNumber</code>) are optional.
+                multiple linked student emails with semicolons. Address columns
+                (<code>addressLine1</code>, <code>addressLine2</code>, <code>barangay</code>,{' '}
+                <code>city</code>, <code>province</code>, <code>zipCode</code>) can be left blank, or
+                replaced with a single legacy <code>address</code> column from an older export. All
+                other columns (<code>cardUid</code>, <code>gradeLevel</code>,{' '}
+                <code>schoolIdNumber</code>, <code>section</code>, <code>phoneNumber</code>) are
+                optional.
               </p>
             </div>
             <button
@@ -1025,6 +1255,7 @@ export const UserManagementPage = () => {
         title={editorMode === 'create' ? 'Add school user' : 'Update school user'}
       >
         <UserForm
+          assignableRoles={assignableRoles}
           error={error}
           imageMode={imageMode}
           imagePreview={imagePreview}
@@ -1063,6 +1294,35 @@ export const UserManagementPage = () => {
           if (deactivateTarget) void handleDeactivate(deactivateTarget);
         }}
         onCancel={() => setDeactivateTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={reactivateTarget !== null}
+        title={reactivateTarget ? `Activate ${reactivateTarget.firstName} ${reactivateTarget.lastName}?` : 'Activate user?'}
+        description="Their account will be able to sign in and hold an active RFID card again."
+        confirmLabel="Activate"
+        onConfirm={() => {
+          if (reactivateTarget) void handleReactivate(reactivateTarget);
+        }}
+        onCancel={() => setReactivateTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={bulkAction !== null}
+        title={
+          bulkAction === 'activate'
+            ? `Activate ${selectedIds.size} ${selectedIds.size === 1 ? 'person' : 'people'}?`
+            : `Deactivate ${selectedIds.size} ${selectedIds.size === 1 ? 'person' : 'people'}?`
+        }
+        description={
+          bulkAction === 'activate'
+            ? 'Selected accounts will be able to sign in and hold an active RFID card again.'
+            : 'Selected accounts will no longer be able to sign in or hold an active RFID card. Your own account is skipped if selected.'
+        }
+        confirmLabel={bulkProcessing ? 'Updating…' : bulkAction === 'activate' ? 'Activate' : 'Deactivate'}
+        tone={bulkAction === 'deactivate' ? 'danger' : 'default'}
+        onConfirm={() => void handleBulkStatus()}
+        onCancel={() => setBulkAction(null)}
       />
     </section>
   );

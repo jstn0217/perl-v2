@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import request from 'supertest';
+import { jest } from '@jest/globals';
 import { createApp } from '../src/app.js';
 import { createRepositories, describeForDataLayers } from './helpers/dataLayer.js';
 
@@ -80,7 +81,7 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
     expect(response.status).toBe(403);
   });
 
-  it('keeps support read-only while allowing cross-school inspection and diagnostics', async () => {
+  it('lets support manage school profiles cross-school but never provision new schools', async () => {
     const app = createApp(createRepositories(dataLayer));
     const loginResponse = await request(app).post('/api/auth/login').send({
       email: 'support@perl.system',
@@ -108,10 +109,10 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
     expect(schoolList.status).toBe(200);
     expect(people.status).toBe(200);
     expect(createSchool.status).toBe(403);
-    expect(updateProfile.status).toBe(403);
+    expect(updateProfile.status).toBe(200);
   });
 
-  it('lets only system admins manage school SMS subscriptions', async () => {
+  it('lets system admins and support manage school SMS sender name', async () => {
     const app = createApp(createRepositories(dataLayer));
     const systemLogin = await request(app).post('/api/auth/login').send({
       email: 'system@perl.system',
@@ -126,19 +127,22 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
       .patch('/api/support/schools/school-golden/sms-settings')
       .set('Cookie', systemLogin.headers['set-cookie'][0])
       .send({ smsSenderName: 'GOLDEN' });
-    const forbidden = await request(app)
+    const supportUpdate = await request(app)
       .patch('/api/support/schools/school-golden/sms-settings')
       .set('Cookie', supportLogin.headers['set-cookie'][0])
-      .send({ smsSenderName: 'BLOCKED' });
+      .send({ smsSenderName: 'GOLDEN2' });
 
     expect(update.status).toBe(200);
     expect(update.body.school).toMatchObject({
       smsSenderName: 'GOLDEN'
     });
-    expect(forbidden.status).toBe(403);
+    expect(supportUpdate.status).toBe(200);
+    expect(supportUpdate.body.school).toMatchObject({
+      smsSenderName: 'GOLDEN2'
+    });
   });
 
-  it('lets only system admins toggle school feature flags', async () => {
+  it('lets system admins and support toggle school feature flags', async () => {
     const app = createApp(createRepositories(dataLayer));
     const systemLogin = await request(app).post('/api/auth/login').send({
       email: 'system@perl.system',
@@ -153,10 +157,10 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
       .patch('/api/support/schools/school-golden/features')
       .set('Cookie', systemLogin.headers['set-cookie'][0])
       .send({ featureKey: 'sms', enabled: true });
-    const forbidden = await request(app)
+    const supportUpdate = await request(app)
       .patch('/api/support/schools/school-golden/features')
       .set('Cookie', supportLogin.headers['set-cookie'][0])
-      .send({ featureKey: 'sms', enabled: false });
+      .send({ featureKey: 'enrollment', enabled: true });
     const invalidKey = await request(app)
       .patch('/api/support/schools/school-golden/features')
       .set('Cookie', systemLogin.headers['set-cookie'][0])
@@ -164,8 +168,23 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
 
     expect(update.status).toBe(200);
     expect(update.body.school.features).toMatchObject({ sms: true });
-    expect(forbidden.status).toBe(403);
+    expect(supportUpdate.status).toBe(200);
+    expect(supportUpdate.body.school.features).toMatchObject({ enrollment: true });
     expect(invalidKey.status).toBe(400);
+
+    const auditResponse = await request(app)
+      .get('/api/support/audit-logs?schoolId=school-golden&action=SCHOOL_FEATURE_TOGGLED')
+      .set('Cookie', systemLogin.headers['set-cookie'][0]);
+    expect(auditResponse.body.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: 'SCHOOL_FEATURE_TOGGLED',
+          actorUserId: 'platform-user-support',
+          actorRole: 'SUPPORT',
+          supportInitiated: true
+        })
+      ])
+    );
   });
 
   it('marks every system-admin mutation as support initiated in the global action log', async () => {
@@ -484,6 +503,139 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
     expect(unchangedB?.email).toBe('conflict.b@stmarys.edu');
   });
 
+  it('never leaks a raw internal error message to the client, returning a generic 500 body instead', async () => {
+    const repositories = createRepositories(dataLayer);
+    const app = createApp(repositories);
+    const login = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!'
+    });
+    const cookie = login.headers['set-cookie'][0];
+
+    const originalListBySchool = repositories.userRepository.listBySchool.bind(repositories.userRepository);
+    repositories.userRepository.listBySchool = async () => {
+      throw new Error('relation "users" does not exist: connection reset by db-internal-host-1.internal');
+    };
+
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const response = await request(app)
+        .get('/api/admin/schools/school-st-marys/summary')
+        .set('Cookie', cookie);
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Internal server error' });
+      expect(JSON.stringify(response.body)).not.toContain('db-internal-host-1');
+      expect(consoleErrorSpy).toHaveBeenCalled();
+    } finally {
+      repositories.userRepository.listBySchool = originalListBySchool;
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('rejects a duplicate schoolIdNumber within the same import file instead of silently overwriting', async () => {
+    const repositories = createRepositories(dataLayer);
+    const app = createApp(repositories);
+    const login = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!'
+    });
+    const cookie = login.headers['set-cookie'][0];
+
+    const response = await request(app)
+      .post('/api/admin/schools/school-st-marys/users/import')
+      .set('Cookie', cookie)
+      .send({
+        rows: [
+          {
+            email: 'dup.row1@stmarys.edu',
+            password: 'Password123!',
+            firstName: 'Dup',
+            lastName: 'RowOne',
+            role: 'STUDENT',
+            cardUid: 'RFID-DUP-001',
+            schoolIdNumber: 'STU-700'
+          },
+          {
+            email: 'dup.row2@stmarys.edu',
+            password: 'Password123!',
+            firstName: 'Dup',
+            lastName: 'RowTwo',
+            role: 'STUDENT',
+            cardUid: 'RFID-DUP-002',
+            schoolIdNumber: 'STU-700'
+          }
+        ]
+      });
+
+    expect(response.status).toBe(207);
+    expect(response.body.created).toHaveLength(1);
+    expect(response.body.created[0].email).toBe('dup.row1@stmarys.edu');
+    expect(response.body.updated).toHaveLength(0);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({
+        row: 3,
+        message: 'duplicate school ID number in file, first used at row 2'
+      })
+    ]);
+
+    const createdUser = await repositories.userRepository.findBySchoolIdNumber('school-st-marys', 'STU-700');
+    expect(createdUser?.email).toBe('dup.row1@stmarys.edu');
+  });
+
+  it('still upserts by schoolIdNumber against a user that existed before the import started', async () => {
+    const repositories = createRepositories(dataLayer);
+    const app = createApp(repositories);
+    const login = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!'
+    });
+    const cookie = login.headers['set-cookie'][0];
+
+    const seedImport = await request(app)
+      .post('/api/admin/schools/school-st-marys/users/import')
+      .set('Cookie', cookie)
+      .send({
+        rows: [
+          {
+            email: 'preexisting@stmarys.edu',
+            password: 'Password123!',
+            firstName: 'Pre',
+            lastName: 'Existing',
+            role: 'STUDENT',
+            cardUid: 'RFID-PREEXIST-001',
+            schoolIdNumber: 'STU-701'
+          }
+        ]
+      });
+    expect(seedImport.status).toBe(201);
+    const existingUserId = seedImport.body.created[0].id;
+
+    const secondImport = await request(app)
+      .post('/api/admin/schools/school-st-marys/users/import')
+      .set('Cookie', cookie)
+      .send({
+        rows: [
+          {
+            email: 'preexisting-updated@stmarys.edu',
+            password: '',
+            firstName: 'Pre-Updated',
+            lastName: 'Existing-Updated',
+            role: 'STUDENT',
+            cardUid: 'RFID-PREEXIST-001',
+            schoolIdNumber: 'STU-701'
+          }
+        ]
+      });
+
+    expect(secondImport.status).toBe(201);
+    expect(secondImport.body.created).toHaveLength(0);
+    expect(secondImport.body.updated).toHaveLength(1);
+    expect(secondImport.body.updated[0].id).toBe(existingUserId);
+    expect(secondImport.body.updated[0].email).toBe('preexisting-updated@stmarys.edu');
+  });
+
   it('forbids cross-school access across all admin route families', async () => {
     const app = createApp(createRepositories(dataLayer));
     const loginResponse = await request(app).post('/api/auth/login').send({
@@ -538,6 +690,7 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
         request(app)
           .post(`/api/admin/schools/school-riverside/users/${schoolBUserId}/deactivate`)
           .set('Cookie', cookie),
+      () => request(app).get('/api/admin/schools/school-riverside/assignable-roles').set('Cookie', cookie),
       () => request(app).get('/api/admin/schools/school-riverside/devices').set('Cookie', cookie),
       () =>
         request(app)
@@ -583,6 +736,180 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
     }
   });
 
+  it('lets support manage a school profile, users, and devices within its support context, all audited', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const supportLogin = await request(app).post('/api/auth/login').send({
+      email: 'support@perl.system',
+      password: 'Support123!'
+    });
+    const cookie = supportLogin.headers['set-cookie'][0];
+
+    const accessResponse = await request(app)
+      .post('/api/support/schools/school-riverside/access')
+      .set('Cookie', cookie);
+    expect(accessResponse.status).toBe(200);
+
+    const profileUpdate = await request(app)
+      .patch('/api/admin/schools/school-riverside/profile')
+      .set('Cookie', cookie)
+      .send({ contactEmail: 'support-managed@riversidetech.edu' });
+    expect(profileUpdate.status).toBe(200);
+    expect(profileUpdate.body.school).toMatchObject({ contactEmail: 'support-managed@riversidetech.edu' });
+
+    const createResponse = await request(app)
+      .post('/api/admin/schools/school-riverside/users')
+      .set('Cookie', cookie)
+      .send({
+        email: 'support-created@riversidetech.edu',
+        password: 'Password123!',
+        firstName: 'Support',
+        lastName: 'Created',
+        role: 'STUDENT',
+        cardUid: 'RFID-RIVERSIDE-099'
+      });
+    expect(createResponse.status).toBe(201);
+    const createdUserId = createResponse.body.user.id as string;
+
+    const updateResponse = await request(app)
+      .patch(`/api/admin/schools/school-riverside/users/${createdUserId}`)
+      .set('Cookie', cookie)
+      .send({ firstName: 'Updated' });
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.user).toMatchObject({ firstName: 'Updated' });
+
+    const deactivateResponse = await request(app)
+      .post(`/api/admin/schools/school-riverside/users/${createdUserId}/deactivate`)
+      .set('Cookie', cookie);
+    expect(deactivateResponse.status).toBe(200);
+    expect(deactivateResponse.body.user).toMatchObject({ isActive: false });
+
+    const deviceResponse = await request(app)
+      .post('/api/admin/schools/school-riverside/devices')
+      .set('Cookie', cookie)
+      .send({ name: 'Support-registered scanner', location: 'Support gate' });
+    expect(deviceResponse.status).toBe(201);
+
+    const dataExportForbidden = await request(app)
+      .get('/api/admin/schools/school-riverside/export')
+      .set('Cookie', cookie);
+    expect(dataExportForbidden.status).toBe(403);
+    const backupForbidden = await request(app)
+      .get('/api/admin/schools/school-riverside/backup')
+      .set('Cookie', cookie);
+    expect(backupForbidden.status).toBe(403);
+    const restoreForbidden = await request(app)
+      .post('/api/admin/schools/school-riverside/restore')
+      .set('Cookie', cookie)
+      .send({});
+    expect(restoreForbidden.status).toBe(403);
+    const eraseForbidden = await request(app)
+      .delete('/api/admin/schools/school-riverside/data')
+      .set('Cookie', cookie)
+      .send({ confirmSlug: 'riverside-tech' });
+    expect(eraseForbidden.status).toBe(403);
+    const submissionsForbidden = await request(app)
+      .get('/api/admin/schools/school-riverside/submissions')
+      .set('Cookie', cookie);
+    expect(submissionsForbidden.status).toBe(403);
+
+    const auditResponse = await request(app)
+      .get('/api/support/audit-logs?schoolId=school-riverside')
+      .set('Cookie', cookie);
+    expect(auditResponse.body.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: 'SCHOOL_PROFILE_UPDATED',
+          actorUserId: 'platform-user-support',
+          actorRole: 'SUPPORT',
+          supportInitiated: true,
+          targetId: 'school-riverside'
+        }),
+        expect.objectContaining({
+          action: 'USER_CREATED',
+          actorRole: 'SUPPORT',
+          supportInitiated: true,
+          targetId: createdUserId
+        }),
+        expect.objectContaining({
+          action: 'USER_UPDATED',
+          actorRole: 'SUPPORT',
+          supportInitiated: true,
+          targetId: createdUserId
+        }),
+        expect.objectContaining({
+          action: 'USER_DEACTIVATED',
+          actorRole: 'SUPPORT',
+          supportInitiated: true,
+          targetId: createdUserId
+        }),
+        expect.objectContaining({
+          action: 'DEVICE_REGISTERED',
+          actorRole: 'SUPPORT',
+          supportInitiated: true
+        })
+      ])
+    );
+  });
+
+  it('lists active custom roles for a school admin, excluding inactive and built-in roles', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const systemCookie = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'system@perl.system', password: 'SystemAdmin123!' })
+      .then((res) => res.headers['set-cookie'][0]);
+    const adminCookie = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'admin@stmarys.edu', password: 'Password123!' })
+      .then((res) => res.headers['set-cookie'][0]);
+    const staffCookie = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'staff@stmarys.edu', password: 'Password123!' })
+      .then((res) => res.headers['set-cookie'][0]);
+
+    const zebra = await request(app)
+      .post('/api/support/roles')
+      .set('Cookie', systemCookie)
+      .send({ name: 'Zebra Role', baseRole: 'STAFF', permissions: ['monitor.live'] });
+    const apple = await request(app)
+      .post('/api/support/roles')
+      .set('Cookie', systemCookie)
+      .send({ name: 'Apple Role', baseRole: 'ADMIN', permissions: ['school.records.read'] });
+    const retired = await request(app)
+      .post('/api/support/roles')
+      .set('Cookie', systemCookie)
+      .send({ name: 'Retired Role', baseRole: 'STAFF', permissions: ['monitor.live'] });
+    await request(app)
+      .patch(`/api/support/roles/${retired.body.role.id}/deactivate`)
+      .set('Cookie', systemCookie);
+
+    const response = await request(app)
+      .get('/api/admin/schools/school-st-marys/assignable-roles')
+      .set('Cookie', adminCookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.roles).toEqual([
+      {
+        id: apple.body.role.id,
+        name: 'Apple Role',
+        description: null,
+        baseRole: 'ADMIN',
+        permissions: ['school.records.read']
+      },
+      {
+        id: zebra.body.role.id,
+        name: 'Zebra Role',
+        description: null,
+        baseRole: 'STAFF',
+        permissions: ['monitor.live']
+      }
+    ]);
+
+    const forbidden = await request(app)
+      .get('/api/admin/schools/school-st-marys/assignable-roles')
+      .set('Cookie', staffCookie);
+    expect(forbidden.status).toBe(403);
+  });
+
   it('updates the school profile for the authenticated admin school', async () => {
     const app = createApp(createRepositories(dataLayer));
     const loginResponse = await request(app).post('/api/auth/login').send({
@@ -603,7 +930,8 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
           secondaryColor: '#EAF2FF',
           accentColor: '#FFAA11'
         },
-        address: '99 North Campus Drive, Makati City',
+        addressLine1: '99 North Campus Drive',
+        city: 'Makati City',
         phone: '(02) 8888-9999',
         timezone: 'Asia/Manila',
         academicYearLabel: 'SY 2026-2027',
@@ -620,7 +948,8 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
         secondaryColor: '#EAF2FF',
         accentColor: '#FFAA11'
       },
-      address: '99 North Campus Drive, Makati City',
+      addressLine1: '99 North Campus Drive',
+      city: 'Makati City',
       phone: '(02) 8888-9999',
       timezone: 'Asia/Manila',
       academicYearLabel: 'SY 2026-2027',
@@ -781,6 +1110,146 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
         expect.objectContaining({ action: 'USER_DEACTIVATED', targetId: createdUserId })
       ])
     );
+  });
+
+  it('reactivates a deactivated user, idempotently, and blocks cross-school access', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!',
+      schoolSlug: 'st-marys'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+
+    const createResponse = await request(app)
+      .post('/api/admin/schools/school-st-marys/users')
+      .set('Cookie', cookie)
+      .send({
+        email: 'reactivate.me@stmarys.edu',
+        password: 'Password123!',
+        firstName: 'Rey',
+        lastName: 'Aquino',
+        role: 'STUDENT'
+      });
+    const userId = createResponse.body.user.id as string;
+
+    await request(app)
+      .post(`/api/admin/schools/school-st-marys/users/${userId}/deactivate`)
+      .set('Cookie', cookie);
+
+    const reactivateResponse = await request(app)
+      .post(`/api/admin/schools/school-st-marys/users/${userId}/reactivate`)
+      .set('Cookie', cookie);
+
+    expect(reactivateResponse.status).toBe(200);
+    expect(reactivateResponse.body.user).toMatchObject({ id: userId, isActive: true });
+
+    const idempotentResponse = await request(app)
+      .post(`/api/admin/schools/school-st-marys/users/${userId}/reactivate`)
+      .set('Cookie', cookie);
+
+    expect(idempotentResponse.status).toBe(200);
+    expect(idempotentResponse.body.user).toMatchObject({ id: userId, isActive: true });
+
+    const auditResponse = await request(app)
+      .get('/api/admin/schools/school-st-marys/audit-logs')
+      .set('Cookie', cookie);
+    expect(auditResponse.body.records).toEqual(
+      expect.arrayContaining([expect.objectContaining({ action: 'USER_REACTIVATED', targetId: userId })])
+    );
+
+    const riversideCookie = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'admin@riversidetech.edu', password: 'Password123!' })
+      .then((res) => res.headers['set-cookie'][0]);
+
+    const crossSchoolResponse = await request(app)
+      .post(`/api/admin/schools/school-riverside/users/${userId}/reactivate`)
+      .set('Cookie', riversideCookie);
+
+    expect(crossSchoolResponse.status).toBe(404);
+  });
+
+  it('bulk activates and deactivates users, rejecting self-deactivation and cross-school IDs per-row', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!',
+      schoolSlug: 'st-marys'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+    const selfUserId = 'user-stmarys-admin';
+
+    const createActiveUser = await request(app)
+      .post('/api/admin/schools/school-st-marys/users')
+      .set('Cookie', cookie)
+      .send({
+        email: 'bulk.active@stmarys.edu',
+        password: 'Password123!',
+        firstName: 'Bea',
+        lastName: 'Cruz',
+        role: 'STUDENT'
+      });
+    const activeUserId = createActiveUser.body.user.id as string;
+
+    const createInactiveUser = await request(app)
+      .post('/api/admin/schools/school-st-marys/users')
+      .set('Cookie', cookie)
+      .send({
+        email: 'bulk.inactive@stmarys.edu',
+        password: 'Password123!',
+        firstName: 'Ivy',
+        lastName: 'Domingo',
+        role: 'STUDENT'
+      });
+    const inactiveUserId = createInactiveUser.body.user.id as string;
+    await request(app)
+      .post(`/api/admin/schools/school-st-marys/users/${inactiveUserId}/deactivate`)
+      .set('Cookie', cookie);
+
+    const deactivateBatch = await request(app)
+      .patch('/api/admin/schools/school-st-marys/users/bulk-status')
+      .set('Cookie', cookie)
+      .send({ userIds: [activeUserId, selfUserId, 'user-riverside-staff'], isActive: false });
+
+    expect(deactivateBatch.status).toBe(200);
+    expect(deactivateBatch.body.updated).toEqual([
+      expect.objectContaining({ id: activeUserId, isActive: false })
+    ]);
+    expect(deactivateBatch.body.errors).toEqual(
+      expect.arrayContaining([
+        { userId: selfUserId, message: 'You cannot deactivate your own account.' },
+        { userId: 'user-riverside-staff', message: 'User not found.' }
+      ])
+    );
+
+    const activateBatch = await request(app)
+      .patch('/api/admin/schools/school-st-marys/users/bulk-status')
+      .set('Cookie', cookie)
+      .send({ userIds: [inactiveUserId], isActive: true });
+
+    expect(activateBatch.status).toBe(200);
+    expect(activateBatch.body.updated).toEqual([
+      expect.objectContaining({ id: inactiveUserId, isActive: true })
+    ]);
+    expect(activateBatch.body.errors).toEqual([]);
+
+    const staffCookie = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'staff@stmarys.edu', password: 'Password123!' })
+      .then((res) => res.headers['set-cookie'][0]);
+
+    const forbiddenResponse = await request(app)
+      .patch('/api/admin/schools/school-st-marys/users/bulk-status')
+      .set('Cookie', staffCookie)
+      .send({ userIds: [activeUserId], isActive: true });
+    expect(forbiddenResponse.status).toBe(403);
+
+    const emptyResponse = await request(app)
+      .patch('/api/admin/schools/school-st-marys/users/bulk-status')
+      .set('Cookie', cookie)
+      .send({ userIds: [], isActive: true });
+    expect(emptyResponse.status).toBe(400);
   });
 
   it('validates client-supplied imageUrl on create and update', async () => {
@@ -1064,6 +1533,18 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
       .send({ cardUid: 'RFID-STMARYS-001' });
     expect(scanResponse.status).toBe(200);
 
+    const submissionResponse = await request(app)
+      .post('/api/admin/schools/school-st-marys/submissions')
+      .set('Cookie', cookie)
+      .send({
+        type: 'ENROLLMENT',
+        firstName: 'Backup',
+        lastName: 'Applicant',
+        email: 'backup.applicant@example.com',
+        gradeLevelApplying: 'Grade 7'
+      });
+    expect(submissionResponse.status).toBe(201);
+
     const exportResponse = await request(app)
       .get('/api/admin/schools/school-st-marys/export')
       .set('Cookie', cookie);
@@ -1071,6 +1552,9 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
     expect(exportResponse.body.format).toBe('perl-school-export');
     expect(exportResponse.body.users).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'user-stmarys-admin' })])
+    );
+    expect(exportResponse.body.submissions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ email: 'backup.applicant@example.com' })])
     );
     expect(JSON.stringify(exportResponse.body)).not.toContain('passwordHash');
     expect(JSON.stringify(exportResponse.body)).not.toContain('keyHash');
@@ -1082,6 +1566,7 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
     expect(backupResponse.body.format).toBe('perl-school-backup');
     expect(backupResponse.body.users.length).toBeGreaterThan(1);
     expect(backupResponse.body.attendanceLogs.length).toBe(1);
+    expect(backupResponse.body.submissions.length).toBe(1);
 
     const backup = backupResponse.body;
     const invalidDeleteResponse = await request(app)
@@ -1096,6 +1581,7 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
       .send({ confirmSlug: 'st-marys' });
     expect(deleteResponse.status).toBe(200);
     expect(deleteResponse.body.deleted.users).toBeGreaterThan(0);
+    expect(deleteResponse.body.deleted.submissions).toBe(1);
 
     const usersAfterDelete = await request(app)
       .get('/api/admin/schools/school-st-marys/users')
@@ -1118,7 +1604,8 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
       counts: {
         users: backup.users.length,
         devices: backup.devices.length,
-        attendanceLogs: backup.attendanceLogs.length
+        attendanceLogs: backup.attendanceLogs.length,
+        submissions: backup.submissions.length
       }
     });
 
@@ -1126,6 +1613,11 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
       .get('/api/admin/schools/school-st-marys/users')
       .set('Cookie', cookie);
     expect(restoredUsers.body.users).toHaveLength(backup.users.length);
+
+    const restoredSubmissions = await request(app)
+      .get('/api/admin/schools/school-st-marys/submissions')
+      .set('Cookie', cookie);
+    expect(restoredSubmissions.body.submissions).toHaveLength(backup.submissions.length);
 
     const auditResponse = await request(app)
       .get('/api/admin/schools/school-st-marys/audit-logs')
@@ -1138,7 +1630,7 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
         expect.objectContaining({ action: 'SCHOOL_BACKUP_RESTORED' })
       ])
     );
-  });
+  }, 20_000);
 
   it('rolls back a school restore when the replacement snapshot cannot be applied', async () => {
     const app = createApp(createRepositories(dataLayer));
@@ -1200,5 +1692,55 @@ describeForDataLayers('Phase 4 admin routes', (dataLayer) => {
       .get('/api/admin/schools/school-st-marys/users')
       .set('Cookie', cookie);
     expect(usersAfterFailure.body.users).toHaveLength(backupResponse.body.users.length);
+  });
+
+  it('restores a legacy backup by mapping its single address string onto addressLine1', async () => {
+    const app = createApp(createRepositories(dataLayer));
+    const loginResponse = await request(app).post('/api/auth/login').send({
+      email: 'admin@stmarys.edu',
+      password: 'Password123!',
+      schoolSlug: 'st-marys'
+    });
+    const cookie = loginResponse.headers['set-cookie'][0];
+    const backupResponse = await request(app)
+      .get('/api/admin/schools/school-st-marys/backup')
+      .set('Cookie', cookie);
+    const legacyBackup = structuredClone(backupResponse.body);
+
+    // Simulate a backup taken before structured addresses shipped: a single
+    // `address` string per record and none of the six structured fields.
+    const stripToLegacyAddress = (record: Record<string, unknown>, legacyValue: string) => {
+      delete record.addressLine1;
+      delete record.addressLine2;
+      delete record.barangay;
+      delete record.city;
+      delete record.province;
+      delete record.zipCode;
+      record.address = legacyValue;
+    };
+
+    stripToLegacyAddress(legacyBackup.school, '145 P. Burgos Street, Barangay Poblacion, Makati City');
+    stripToLegacyAddress(legacyBackup.users[0], '12 Legacy Lane, Quezon City');
+
+    const restoreResponse = await request(app)
+      .post('/api/admin/schools/school-st-marys/restore')
+      .set('Cookie', cookie)
+      .send(legacyBackup);
+    expect(restoreResponse.status).toBe(200);
+
+    const schoolProfileResponse = await request(app)
+      .get('/api/admin/schools/school-st-marys/profile')
+      .set('Cookie', cookie);
+    expect(schoolProfileResponse.body.school.addressLine1).toBe(
+      '145 P. Burgos Street, Barangay Poblacion, Makati City'
+    );
+
+    const usersAfterRestore = await request(app)
+      .get('/api/admin/schools/school-st-marys/users')
+      .set('Cookie', cookie);
+    const restoredUser = usersAfterRestore.body.users.find(
+      (user: { id: string }) => user.id === legacyBackup.users[0].id
+    );
+    expect(restoredUser.addressLine1).toBe('12 Legacy Lane, Quezon City');
   });
 });

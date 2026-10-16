@@ -1,4 +1,4 @@
-// Minimal app-shell service worker for PERL.
+// Minimal app-shell service worker for Perfect Learning (AMoS).
 // Scope is intentionally narrow: it never caches /api/ traffic or the SSE
 // attendance stream, since this app's value is live data, not offline data
 // entry. It only guarantees the shell (HTML/CSS/JS/icons) still boots and a

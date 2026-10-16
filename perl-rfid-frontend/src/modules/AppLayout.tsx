@@ -107,7 +107,7 @@ export const AppLayout = () => {
 
           <footer className="app-footer">
             <img src="/brand/perl-mark-96.png" alt="" width="20" height="17" aria-hidden="true" />
-            <span>Powered by PERL</span>
+            <span>Powered by AMoS</span>
           </footer>
         </section>
       </div>

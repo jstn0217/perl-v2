@@ -10,19 +10,21 @@ The API follows a strict one-directional dependency chain:
 routes/  →  controllers/  →  services/  →  repositories/interfaces/  →  repositories/mock/ | repositories/db/
 ```
 
-- **Routes** (`perl-api/src/routes/*.ts`) wire Express paths to a controller and attach the auth/rate-limit middleware chain. There are five route groups: `authRoutes`, `attendanceRoutes`, `adminRoutes`, `schoolRoutes`, `supportRoutes` (plus `healthRoutes`), all mounted under `/api` in `perl-api/src/app.ts`.
+- **Routes** (`perl-api/src/routes/*.ts`) wire Express paths to a controller and attach the auth/rate-limit middleware chain. There are seven route groups: `authRoutes`, `attendanceRoutes`, `adminRoutes`, `schoolRoutes`, `supportRoutes`, `roleRoutes`, `publicRoutes` (plus `healthRoutes`), all mounted under `/api` in `perl-api/src/app.ts`. `publicRoutes` is the only unauthenticated group besides login/health: per-school enrollment/inquiry intake resolved by school slug, feature-toggle-gated, per-IP-per-school rate limited.
 - **Controllers** (`perl-api/src/controllers/*.ts`) parse/validate HTTP input, call one or more services, and shape the HTTP response. They hold no business rules — e.g. `attendanceController.ts` resolves the request's authorized school, delegates the actual admit/deny decision entirely to `AttendanceService`.
 - **Services** (`perl-api/src/services/*.ts`) hold business logic and depend only on repository *interfaces*, never on a concrete mock or database class:
-  - `AuthService` — login, session shaping, self-service profile updates, role/schoolId access checks
+  - `AuthService` — login, session shaping, self-service profile updates, role/schoolId access checks, and (see Section 3) permission-catalog access checks
   - `AttendanceService` — the admit/deny state machine, cooldown/daily-cap rules, log listing/export
   - `TenantService` — school (`SchoolProfile`) resolution, creation, and profile updates
-  - `AdminService` — school-scoped user CRUD, CSV import, device/user administration surface
+  - `AdminService` — school-scoped user CRUD, CSV import, device/user administration surface, and custom-role assignment validation
   - `DeviceService` — device registration, one-time key issuance, key rotation/revocation, key authentication
   - `AuditService` — writes/reads the `audit_logs` action trail
   - `NotificationService` — turns admitted student scans into guardian SMS delivery attempts
   - `SchoolDataService` — school-scoped export/backup/restore and erasure operations (Phase 8 compliance)
   - `ImageService` — validates and stores uploaded logo/user photos through `IImageStorage`
-- **Repository interfaces** (`perl-api/src/repositories/interfaces/`) are narrow, feature-specific ports: `ITenantRepository`, `IUserRepository`, `IPlatformUserRepository`, `IAttendanceRepository`, `IDeviceRepository`, `IAuditRepository`, `INotificationRepository`. Services never see more than the interface they need.
+  - `RoleService` — CRUD for custom `RoleDefinition` rows: create/update/deactivate/reactivate, name uniqueness, and the virtual built-in role list
+  - `SubmissionService` — enrollment/inquiry intake: per-type validation, status/notes updates, and the public-create path that enforces the school's `enrollment`/`inquiry` feature toggles
+- **Repository interfaces** (`perl-api/src/repositories/interfaces/`) are narrow, feature-specific ports: `ITenantRepository`, `IUserRepository`, `IPlatformUserRepository`, `IAttendanceRepository`, `IDeviceRepository`, `IAuditRepository`, `INotificationRepository`, `IRoleRepository`. Services never see more than the interface they need.
 - **Adapters**: `repositories/mock/*` (in-memory, seeded, used for local dev and the default test suite) and `repositories/db/*` (PostgreSQL via the `pg` driver — no ORM) each implement the exact same interfaces.
 
 ### The `DATA_LAYER` composition root
@@ -74,7 +76,17 @@ Two independent role universes, both carried in the signed JWT:
 | `SYSTEM_ADMIN` | Provisions new schools, administers any selected school |
 | `SUPPORT` | Read-only cross-school inspection, global audit log, monitor diagnostics |
 
-`perl-api/src/auth/permissions.ts` centralizes the role sets used by route guards (`schoolReadRoles`, `schoolManagementRoles`, `liveMonitorRoles`, `monitorDiagnosticRoles`, `isPlatformRole`), so authorization rules live in one file rather than being re-derived per route.
+`perl-api/src/auth/permissions.ts` still centralizes the platform-only role sets used by route guards that never change per user (`systemAdministrationRoles`, `platformSupportRoles`, `monitorDiagnosticRoles`, `isPlatformRole`) — those stay hardcoded, unchanged.
+
+### Permission catalog and custom roles
+
+School-scoped access (everything `schoolReadRoles`/`schoolManagementRoles`/`liveMonitorRoles` used to gate directly) is now resolved through a fixed permission catalog instead of a raw role-list check:
+
+- **`perl-api/src/auth/permissionCatalog.ts`** — the fixed registry of permission keys (`school.records.read`, `school.profile.manage`, `school.users.manage`, `school.devices.manage`, `school.data.manage`, `monitor.live`), one per real enforcement point in `adminRoutes.ts`/`attendanceController.ts`. Platform-only capabilities (support workspace, provisioning, role management itself) are intentionally **not** catalog entries — they stay hardcoded to `SYSTEM_ADMIN`/`SUPPORT` via `requireUserRole`.
+- **`RoleDefinition`** (`perl-api/src/types/Role.ts`, persisted in `role_definitions` — see `DATA-MODEL.md`) — an admin-editable `{ name, baseRole: 'ADMIN'|'STAFF', permissions[], isActive }` row that a school's `ADMIN`/`STAFF` user can be assigned to via `users.role_definition_id`. Built-in roles (`ADMIN`, `STAFF`, `STUDENT`, `GUARDIAN`, `SYSTEM_ADMIN`, `SUPPORT`) are never persisted rows — they are computed virtual `RoleListItem`s (`perl-api/src/auth/rolePermissions.ts`) so they can never drift or be edited through the API.
+- **`resolveUserPermissions(user, roleRepository)`** (`perl-api/src/auth/rolePermissions.ts`) is the single source of truth for a user's effective permission set: `SYSTEM_ADMIN` gets every catalog key, `SUPPORT` gets a fixed read-only subset (`school.records.read`, `monitor.live`), `STUDENT`/`GUARDIAN` get none (their attendance access is role-based and self-scoped, untouched by this catalog), and `ADMIN`/`STAFF` get their assigned `RoleDefinition`'s permissions if one is active and base-role-matching, else the built-in default for their base role (`ADMIN_DEFAULT_PERMISSIONS` = every key, `STAFF_DEFAULT_PERMISSIONS` = `['monitor.live']` — both exact reproductions of the pre-catalog behavior, so an unassigned user's access never changes).
+- **`requirePermission(authService, roleRepository, key)`** (`perl-api/src/middleware/authMiddleware.ts`) is `requireRole`'s permission-catalog counterpart: same schoolId-scoping behavior (a token's `schoolId` must match the route's `:schoolId` unless the caller is a platform role), but it checks catalog-key membership in the resolved permission set instead of raw-role membership in a fixed list. `adminRoutes.ts` uses it for every school-scoped route; `attendanceController.streamEvents` calls `resolveUserPermissions` directly (its schoolId comes from the session/query, not a route param, so it doesn't fit the route-middleware shape).
+- **Role management API** (`perl-api/src/routes/roleRoutes.ts`, mounted at `/api/support/roles` and `/api/support/permissions/catalog`) — `SYSTEM_ADMIN`-only create/update/deactivate/reactivate, `SYSTEM_ADMIN`+`SUPPORT` read. No hard delete. Deactivation is blocked while any user is still assigned to the role (`IUserRepository.countByRoleDefinitionId`) rather than letting them silently fall back to defaults. Every mutation is audited (`ROLE_CREATED`/`ROLE_UPDATED`/`ROLE_DEACTIVATED`/`ROLE_REACTIVATED`) with `schoolId: null`, since a `RoleDefinition` has no owning school (see `DATA-MODEL.md`'s note on nullable `audit_logs.school_id`).
 
 ## 4. Deployment Topology
 
@@ -87,7 +99,7 @@ flowchart LR
 
     subgraph API["perl-api (Express + TypeScript)"]
         Routes["routes/ -> controllers/"]
-        Services["services/\n(AuthService, AttendanceService,\nTenantService, AdminService,\nDeviceService, AuditService,\nNotificationService)"]
+        Services["services/\n(AuthService, AttendanceService,\nTenantService, AdminService,\nDeviceService, AuditService,\nNotificationService, RoleService)"]
         Repos["repository interfaces\n(DATA_LAYER composition root)"]
         Bus["AttendanceEventBus\n(in-process EventEmitter)"]
     end

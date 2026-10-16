@@ -4,6 +4,7 @@ import type { IUserRepository } from '../repositories/interfaces/IUserRepository
 import type { IImageStorage } from '../storage/IImageStorage.js';
 import type { SchoolProfile } from '../types/SchoolProfile.js';
 import type { ManagedUserView } from './AdminService.js';
+import { DomainError } from '../utils/errors.js';
 
 interface UploadedImage {
   buffer: Buffer;
@@ -40,22 +41,22 @@ export class ImageService {
 
   async uploadSchoolLogo(schoolId: string, image: UploadedImage): Promise<SchoolProfile> {
     const school = await this.tenantRepository.findSchoolById(schoolId);
-    if (!school) throw new Error('School not found.');
+    if (!school) throw new DomainError('School not found.', 404);
 
     const logoUrl = await this.storeImage(`schools/${schoolId}/logo`, image);
     const updated = await this.tenantRepository.updateSchoolProfile(schoolId, { logoUrl });
-    if (!updated) throw new Error('School not found.');
+    if (!updated) throw new DomainError('School not found.', 404);
 
     return updated;
   }
 
   async uploadUserImage(schoolId: string, userId: string, image: UploadedImage): Promise<ManagedUserView> {
     const user = await this.userRepository.findById(userId);
-    if (!user || user.schoolId !== schoolId) throw new Error('User not found.');
+    if (!user || user.schoolId !== schoolId) throw new DomainError('User not found.', 404);
 
     const imageUrl = await this.storeImage(`schools/${schoolId}/users/${userId}`, image);
     const updated = await this.userRepository.update(userId, schoolId, { imageUrl });
-    if (!updated) throw new Error('User not found.');
+    if (!updated) throw new DomainError('User not found.', 404);
 
     return {
       id: updated.id,
@@ -68,18 +69,24 @@ export class ImageService {
       gradeLevel: updated.gradeLevel,
       schoolIdNumber: updated.schoolIdNumber,
       section: updated.section,
-      address: updated.address,
       imageUrl: updated.imageUrl,
       phoneNumber: updated.phoneNumber ?? null,
       linkedStudentIds: updated.linkedStudentIds ?? [],
-      isActive: updated.isActive
+      isActive: updated.isActive,
+      roleDefinitionId: updated.roleDefinitionId ?? null,
+      addressLine1: updated.addressLine1,
+      addressLine2: updated.addressLine2,
+      barangay: updated.barangay,
+      city: updated.city,
+      province: updated.province,
+      zipCode: updated.zipCode
     };
   }
 
   private async storeImage(prefix: string, image: UploadedImage): Promise<string> {
     const extension = extensions[image.contentType];
     if (!extension || !hasExpectedSignature(image)) {
-      throw new Error('Uploaded file is not a valid JPEG, PNG, or WebP image.');
+      throw new DomainError('Uploaded file is not a valid JPEG, PNG, or WebP image.');
     }
 
     return this.imageStorage.upload({

@@ -8,7 +8,7 @@ import {
 import { useAuth } from '../providers/auth-context';
 import { useTenantContext } from '../providers/TenantContext';
 import type { SchoolProfile } from '../types/school';
-import { canManageSchool } from '../lib/permissions';
+import { canManageSchoolResources } from '../lib/permissions';
 
 type SchoolProfileFormState = {
   name: string;
@@ -17,7 +17,12 @@ type SchoolProfileFormState = {
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
-  address: string;
+  addressLine1: string;
+  addressLine2: string;
+  barangay: string;
+  city: string;
+  province: string;
+  zipCode: string;
   phone: string;
   timezone: string;
   academicYearLabel: string;
@@ -31,7 +36,12 @@ const toFormState = (school: SchoolProfile): SchoolProfileFormState => ({
   primaryColor: school.theme.primaryColor,
   secondaryColor: school.theme.secondaryColor,
   accentColor: school.theme.accentColor,
-  address: school.address ?? '',
+  addressLine1: school.addressLine1 ?? '',
+  addressLine2: school.addressLine2 ?? '',
+  barangay: school.barangay ?? '',
+  city: school.city ?? '',
+  province: school.province ?? '',
+  zipCode: school.zipCode ?? '',
   phone: school.phone ?? '',
   timezone: school.timezone ?? '',
   academicYearLabel: school.academicYearLabel ?? '',
@@ -41,7 +51,7 @@ const toFormState = (school: SchoolProfile): SchoolProfileFormState => ({
 export const SchoolProfileAdminPage = () => {
   const { user } = useAuth();
   const { activeSchool, schools, setAuthenticatedSchool } = useTenantContext();
-  const canEdit = canManageSchool(user?.role);
+  const canEdit = canManageSchoolResources(user?.role);
   const [formState, setFormState] = useState<SchoolProfileFormState>(() => toFormState(activeSchool));
   const [status, setStatus] = useState<'loading' | 'ready' | 'saving'>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +122,12 @@ export const SchoolProfileAdminPage = () => {
           secondaryColor: formState.secondaryColor,
           accentColor: formState.accentColor
         },
-        address: formState.address.trim() || null,
+        addressLine1: formState.addressLine1.trim() || null,
+        addressLine2: formState.addressLine2.trim() || null,
+        barangay: formState.barangay.trim() || null,
+        city: formState.city.trim() || null,
+        province: formState.province.trim() || null,
+        zipCode: formState.zipCode.trim() || null,
         phone: formState.phone.trim() || null,
         timezone: formState.timezone.trim(),
         academicYearLabel: formState.academicYearLabel.trim() || null,
@@ -164,7 +179,7 @@ export const SchoolProfileAdminPage = () => {
           <p className="section-copy">
             {canEdit
               ? 'Edit the school identity that drives the branded login, dashboard shell, and live attendance surfaces.'
-              : 'Inspect the school identity and branding configuration. Support access is read-only.'}
+              : 'Inspect the school identity and branding configuration.'}
           </p>
         </div>
       </div>
@@ -204,7 +219,7 @@ export const SchoolProfileAdminPage = () => {
               <h3>{canEdit ? 'Update school metadata' : 'School metadata'}</h3>
             </div>
             <span className="status-pill status-pill--muted">
-              {status === 'saving' ? 'Saving…' : canEdit ? 'Admin access' : 'Read-only support'}
+              {status === 'saving' ? 'Saving…' : canEdit ? 'Management access' : 'Read-only'}
             </span>
           </div>
 
@@ -280,15 +295,68 @@ export const SchoolProfileAdminPage = () => {
 
           <div className="field-grid">
             <label className="field">
-              <span>Address</span>
+              <span>Address line 1</span>
               <input
                 type="text"
-                value={formState.address}
-                onChange={(event) => setFormState((current) => ({ ...current, address: event.target.value }))}
-                placeholder="Street, city, province"
+                value={formState.addressLine1}
+                onChange={(event) => setFormState((current) => ({ ...current, addressLine1: event.target.value }))}
+                placeholder="House / street"
               />
             </label>
 
+            <label className="field">
+              <span>Address line 2</span>
+              <input
+                type="text"
+                value={formState.addressLine2}
+                onChange={(event) => setFormState((current) => ({ ...current, addressLine2: event.target.value }))}
+                placeholder="Building, unit (optional)"
+              />
+            </label>
+          </div>
+
+          <div className="field-grid">
+            <label className="field">
+              <span>Barangay</span>
+              <input
+                type="text"
+                value={formState.barangay}
+                onChange={(event) => setFormState((current) => ({ ...current, barangay: event.target.value }))}
+              />
+            </label>
+
+            <label className="field">
+              <span>City</span>
+              <input
+                type="text"
+                value={formState.city}
+                onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))}
+              />
+            </label>
+          </div>
+
+          <div className="field-grid">
+            <label className="field">
+              <span>Province</span>
+              <input
+                type="text"
+                value={formState.province}
+                onChange={(event) => setFormState((current) => ({ ...current, province: event.target.value }))}
+              />
+            </label>
+
+            <label className="field">
+              <span>ZIP code</span>
+              <input
+                type="text"
+                value={formState.zipCode}
+                onChange={(event) => setFormState((current) => ({ ...current, zipCode: event.target.value }))}
+                inputMode="numeric"
+              />
+            </label>
+          </div>
+
+          <div className="field-grid">
             <label className="field">
               <span>Phone</span>
               <input

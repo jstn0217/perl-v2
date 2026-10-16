@@ -1,11 +1,26 @@
 import bcrypt from 'bcrypt';
+import { randomUUID } from 'node:crypto';
+import { DomainError } from '../utils/errors.js';
 import type { ITenantRepository } from '../repositories/interfaces/ITenantRepository.js';
 import type { IUserRepository, UserListQuery } from '../repositories/interfaces/IUserRepository.js';
+import type { IRoleRepository } from '../repositories/interfaces/IRoleRepository.js';
 import type { PagedResult } from '../types/Pagination.js';
 import type { SchoolProfile } from '../types/SchoolProfile.js';
 import type { SchoolUserRole, UserRecord } from '../types/User.js';
+import type { RoleDefinition } from '../types/Role.js';
+import type { AddressFields } from '../types/Address.js';
+import { ADDRESS_FIELD_KEYS } from '../types/Address.js';
+import { BUILTIN_ROLE_DEFINITION_IDS } from '../auth/rolePermissions.js';
 
-export interface ManagedUserView {
+export interface AssignableRoleView {
+  id: string;
+  name: string;
+  description: string | null;
+  baseRole: RoleDefinition['baseRole'];
+  permissions: RoleDefinition['permissions'];
+}
+
+export interface ManagedUserView extends AddressFields {
   id: string;
   schoolId: string;
   email: string;
@@ -16,14 +31,14 @@ export interface ManagedUserView {
   gradeLevel: string | null;
   schoolIdNumber: string | null;
   section: string | null;
-  address: string | null;
   imageUrl: string | null;
   phoneNumber: string | null;
   linkedStudentIds: string[];
   isActive: boolean;
+  roleDefinitionId: string | null;
 }
 
-export interface CreateManagedUserInput {
+export interface CreateManagedUserInput extends Partial<AddressFields> {
   email?: string;
   password?: string;
   firstName?: string;
@@ -33,14 +48,14 @@ export interface CreateManagedUserInput {
   gradeLevel?: string | null;
   schoolIdNumber?: string | null;
   section?: string | null;
-  address?: string | null;
   imageUrl?: string | null;
   phoneNumber?: string | null;
   linkedStudentIds?: string[];
   linkedGuardianIds?: string[];
+  roleDefinitionId?: string | null;
 }
 
-export interface UpdateManagedUserInput {
+export interface UpdateManagedUserInput extends Partial<AddressFields> {
   email?: string;
   password?: string;
   firstName?: string;
@@ -50,14 +65,18 @@ export interface UpdateManagedUserInput {
   gradeLevel?: string | null;
   schoolIdNumber?: string | null;
   section?: string | null;
-  address?: string | null;
   imageUrl?: string | null;
   phoneNumber?: string | null;
   linkedStudentIds?: string[];
   linkedGuardianIds?: string[];
+  roleDefinitionId?: string | null;
 }
 
-export interface ImportManagedUserInput extends Omit<CreateManagedUserInput, 'linkedStudentIds'> {
+// CSV import never carries a role definition assignment — importers manage
+// base roles only. See AdminService.importUsers, which strips the field even
+// if a malformed row payload includes it.
+export interface ImportManagedUserInput
+  extends Omit<CreateManagedUserInput, 'linkedStudentIds' | 'roleDefinitionId'> {
   linkedStudentEmails?: string[];
 }
 
@@ -98,6 +117,48 @@ const normalizeOptionalString = (value: string | null | undefined) => {
   return normalized.length > 0 ? normalized : null;
 };
 
+const ADDRESS_MAX_LENGTH = 255;
+const ZIP_CODE_MAX_LENGTH = 20;
+
+const assertOptionalMaxLength = (value: string | null | undefined, field: string, maxLength: number) => {
+  if (value && value.length > maxLength) {
+    throw new DomainError(`${field} must be ${maxLength} characters or fewer.`);
+  }
+
+  return value ?? null;
+};
+
+// Normalizes only the address fields present on `input`, leaving the rest of `changes`
+// untouched — callers merge the result in themselves so "field not sent" still means
+// "leave unchanged" for partial updates.
+const normalizeAddressFields = (input: Partial<AddressFields>): Partial<AddressFields> => {
+  const changes: Partial<AddressFields> = {};
+
+  for (const key of ADDRESS_FIELD_KEYS) {
+    if (input[key] === undefined) continue;
+    const maxLength = key === 'zipCode' ? ZIP_CODE_MAX_LENGTH : ADDRESS_MAX_LENGTH;
+    const label = key === 'zipCode' ? 'ZIP code' : key;
+    changes[key] = assertOptionalMaxLength(normalizeOptionalString(input[key]), label, maxLength);
+  }
+
+  return changes;
+};
+
+// Same normalization as normalizeAddressFields, but always returns all six keys
+// (missing input becomes null) — used where a full AddressFields value is required,
+// such as constructing a brand-new record.
+const toAddressFieldsRecord = (input: Partial<AddressFields>): AddressFields => {
+  const record = {} as AddressFields;
+
+  for (const key of ADDRESS_FIELD_KEYS) {
+    const maxLength = key === 'zipCode' ? ZIP_CODE_MAX_LENGTH : ADDRESS_MAX_LENGTH;
+    const label = key === 'zipCode' ? 'ZIP code' : key;
+    record[key] = assertOptionalMaxLength(normalizeOptionalString(input[key]), label, maxLength);
+  }
+
+  return record;
+};
+
 const validateOptionalImageUrl = (value: string | null | undefined) => {
   const normalized = normalizeOptionalString(value);
 
@@ -110,11 +171,11 @@ const validateOptionalImageUrl = (value: string | null | undefined) => {
   try {
     parsed = new URL(normalized);
   } catch {
-    throw new Error('Image URL must be a valid https URL.');
+    throw new DomainError('Image URL must be a valid https URL.');
   }
 
   if (parsed.protocol !== 'https:') {
-    throw new Error('Image URL must be a valid https URL.');
+    throw new DomainError('Image URL must be a valid https URL.');
   }
 
   return normalized;
@@ -124,7 +185,7 @@ const normalizeRequiredString = (value: string | undefined, field: string) => {
   const normalized = value?.trim();
 
   if (!normalized) {
-    throw new Error(`${field} is required.`);
+    throw new DomainError(`${field} is required.`);
   }
 
   return normalized;
@@ -132,13 +193,13 @@ const normalizeRequiredString = (value: string | undefined, field: string) => {
 
 const assertEmail = (value: string) => {
   if (!emailPattern.test(value)) {
-    throw new Error('A valid email address is required.');
+    throw new DomainError('A valid email address is required.');
   }
 };
 
 const assertRole = (value: string | undefined): SchoolUserRole => {
   if (!value || !validRoles.includes(value as SchoolUserRole)) {
-    throw new Error('A valid role is required.');
+    throw new DomainError('A valid role is required.');
   }
 
   return value as SchoolUserRole;
@@ -146,7 +207,7 @@ const assertRole = (value: string | undefined): SchoolUserRole => {
 
 const assertPassword = (value: string | undefined) => {
   if (!value || value.trim().length < 8) {
-    throw new Error('Password must be at least 8 characters.');
+    throw new DomainError('Password must be at least 8 characters.');
   }
 
   return value;
@@ -154,7 +215,7 @@ const assertPassword = (value: string | undefined) => {
 
 const assertHex = (value: string, label: string) => {
   if (!hexPattern.test(value)) {
-    throw new Error(`${label} must be a valid hex color.`);
+    throw new DomainError(`${label} must be a valid hex color.`);
   }
 };
 
@@ -177,10 +238,10 @@ const assertUniqueCardUid = async (
   }
 
   if (conflictingUser.schoolId === schoolId) {
-    throw new Error('A user with that card UID already exists for this school.');
+    throw new DomainError('A user with that card UID already exists for this school.');
   }
 
-  throw new Error('Card UID values must remain unique across schools.');
+  throw new DomainError('Card UID values must remain unique across schools.');
 };
 
 const assertUniqueSchoolIdNumber = async (
@@ -201,14 +262,69 @@ const assertUniqueSchoolIdNumber = async (
     return;
   }
 
-  throw new Error('A user with that school ID number already exists for this school.');
+  throw new DomainError('A user with that school ID number already exists for this school.');
 };
 
 export class AdminService {
   constructor(
     private readonly tenantRepository: ITenantRepository,
-    private readonly userRepository: IUserRepository
+    private readonly userRepository: IUserRepository,
+    private readonly roleRepository?: IRoleRepository
   ) {}
+
+  // Assignment is only valid when: the target base role matches the
+  // definition's baseRole, the definition is a persisted (non-virtual)
+  // custom role, and it is currently active. Deactivated/virtual/wrong-role
+  // assignments are rejected outright rather than silently ignored, so an
+  // admin never ends up with a user pointing at a role that can't apply.
+  private async assertRoleDefinitionAssignable(
+    baseRole: SchoolUserRole,
+    roleDefinitionId: string
+  ): Promise<void> {
+    if (!this.roleRepository) {
+      throw new DomainError('Custom role assignment is not available.');
+    }
+
+    if ((Object.values(BUILTIN_ROLE_DEFINITION_IDS) as string[]).includes(roleDefinitionId)) {
+      throw new DomainError('Built-in roles cannot be assigned directly; leave roleDefinitionId unset instead.');
+    }
+
+    const definition = await this.roleRepository.findById(roleDefinitionId);
+
+    if (!definition) {
+      throw new DomainError('Role not found.', 404);
+    }
+
+    if (!definition.isActive) {
+      throw new DomainError('This role is deactivated and cannot be assigned.');
+    }
+
+    if (definition.baseRole !== baseRole) {
+      throw new DomainError(`This role can only be assigned to ${definition.baseRole} users.`);
+    }
+  }
+
+  // Assignable custom roles for the user-management UI's role picker: active,
+  // persisted role definitions only. Built-in roles need no entry here since
+  // they apply automatically whenever roleDefinitionId is left unset.
+  async listAssignableRoles(): Promise<AssignableRoleView[]> {
+    if (!this.roleRepository) {
+      return [];
+    }
+
+    const roles = await this.roleRepository.list();
+
+    return roles
+      .filter((role) => role.isActive)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((role) => ({
+        id: role.id,
+        name: role.name,
+        description: role.description,
+        baseRole: role.baseRole,
+        permissions: role.permissions
+      }));
+  }
 
   async getSchoolSummary(schoolId: string): Promise<SchoolSummary> {
     const [school, users] = await Promise.all([
@@ -243,13 +359,13 @@ export class AdminService {
         | 'logoUrl'
         | 'contactEmail'
         | 'theme'
-        | 'address'
         | 'phone'
         | 'timezone'
         | 'academicYearLabel'
         | 'depedSchoolId'
       >
-    >
+    > &
+      Partial<AddressFields>
   ): Promise<SchoolProfile> {
     const existing = await this.requireSchool(schoolId);
     const nextName = input.name !== undefined ? normalizeRequiredString(input.name, 'School name') : existing.name;
@@ -261,7 +377,7 @@ export class AdminService {
       secondaryColor: input.theme?.secondaryColor ?? existing.theme.secondaryColor,
       accentColor: input.theme?.accentColor ?? existing.theme.accentColor
     };
-    const nextAddress = input.address !== undefined ? normalizeOptionalString(input.address) : existing.address;
+    const addressChanges = normalizeAddressFields(input);
     const nextPhone = input.phone !== undefined ? normalizeOptionalString(input.phone) : existing.phone;
     const nextTimezone =
       input.timezone !== undefined ? normalizeRequiredString(input.timezone, 'Timezone') : existing.timezone;
@@ -282,15 +398,15 @@ export class AdminService {
       logoUrl: nextLogoUrl,
       contactEmail: nextContactEmail,
       theme: nextTheme,
-      address: nextAddress,
       phone: nextPhone,
       timezone: nextTimezone,
       academicYearLabel: nextAcademicYearLabel,
-      depedSchoolId: nextDepedSchoolId
+      depedSchoolId: nextDepedSchoolId,
+      ...addressChanges
     });
 
     if (!updated) {
-      throw new Error('School not found.');
+      throw new DomainError('School not found.', 404);
     }
 
     return updated;
@@ -326,7 +442,7 @@ export class AdminService {
     });
 
     if (existingUser) {
-      throw new Error('A user with that email already exists.');
+      throw new DomainError('A user with that email already exists.');
     }
 
     const cardUid = normalizeOptionalString(input.cardUid);
@@ -340,8 +456,13 @@ export class AdminService {
     await assertUniqueCardUid(this.userRepository, schoolId, cardUid);
     await assertUniqueSchoolIdNumber(this.userRepository, schoolId, schoolIdNumber);
 
+    const roleDefinitionId = normalizeOptionalString(input.roleDefinitionId) ?? null;
+    if (roleDefinitionId) {
+      await this.assertRoleDefinitionAssignable(role, roleDefinitionId);
+    }
+
     const user: UserRecord = {
-      id: `user-${schoolId}-${Date.now()}`,
+      id: `user-${schoolId}-${randomUUID()}`,
       schoolId,
       email,
       passwordHash: await bcrypt.hash(password, 12),
@@ -352,11 +473,12 @@ export class AdminService {
       gradeLevel: normalizeOptionalString(input.gradeLevel) ?? null,
       schoolIdNumber: schoolIdNumber ?? null,
       section: normalizeOptionalString(input.section) ?? null,
-      address: normalizeOptionalString(input.address) ?? null,
+      ...toAddressFieldsRecord(input),
       imageUrl: validateOptionalImageUrl(input.imageUrl) ?? null,
       phoneNumber: normalizeOptionalString(input.phoneNumber) ?? null,
       linkedStudentIds,
-      isActive: true
+      isActive: true,
+      roleDefinitionId
     };
 
     const created = await this.userRepository.create(user);
@@ -392,13 +514,21 @@ export class AdminService {
   ): Promise<ImportManagedUserResult> {
     await this.requireSchool(schoolId);
     if (!Array.isArray(rows) || rows.length === 0) {
-      throw new Error('Import must contain at least one user row.');
+      throw new DomainError('Import must contain at least one user row.');
     }
     if (rows.length > 500) {
-      throw new Error('Import is limited to 500 user rows at a time.');
+      throw new DomainError('Import is limited to 500 user rows at a time.');
     }
 
-    const indexedRows = rows.map((input, index) => ({ input, row: index + 2 }));
+    // Import rows never carry a role definition assignment, even if a malformed
+    // upload payload includes one — CSV import manages base roles only.
+    const indexedRows = rows.map((rawInput, index) => {
+      const { roleDefinitionId, ...input } = rawInput as ImportManagedUserInput & {
+        roleDefinitionId?: unknown;
+      };
+      void roleDefinitionId;
+      return { input, row: index + 2 };
+    });
     const orderedRows = [
       ...indexedRows.filter(({ input }) => input.role !== 'GUARDIAN'),
       ...indexedRows.filter(({ input }) => input.role === 'GUARDIAN')
@@ -407,20 +537,37 @@ export class AdminService {
     const updated: ManagedUserView[] = [];
     const errors: ImportManagedUserResult['errors'] = [];
 
+    // Track the first row each schoolIdNumber appears at in the uploaded file
+    // (in file order, not processing order). A later row matching the same
+    // schoolIdNumber would otherwise upsert against the user the earlier row
+    // in this same upload just created/updated, silently overwriting it.
+    const schoolIdNumberFirstRow = new Map<string, number>();
+    for (const { input, row } of indexedRows) {
+      const normalized = normalizeOptionalString(input.schoolIdNumber);
+      if (normalized && !schoolIdNumberFirstRow.has(normalized)) {
+        schoolIdNumberFirstRow.set(normalized, row);
+      }
+    }
+
     for (const { input, row } of orderedRows) {
       try {
+        const schoolIdNumber = normalizeOptionalString(input.schoolIdNumber);
+        const firstRow = schoolIdNumber ? schoolIdNumberFirstRow.get(schoolIdNumber) : undefined;
+        if (schoolIdNumber && firstRow !== row) {
+          throw new DomainError(`duplicate school ID number in file, first used at row ${firstRow}`);
+        }
+
         const linkedStudentIds: string[] = [];
         if (input.role === 'GUARDIAN') {
           for (const linkedEmail of input.linkedStudentEmails ?? []) {
             const student = await this.userRepository.findByEmail(linkedEmail.trim().toLowerCase());
             if (!student || student.schoolId !== schoolId || student.role !== 'STUDENT') {
-              throw new Error(`Linked student ${linkedEmail} was not found in this school.`);
+              throw new DomainError(`Linked student ${linkedEmail} was not found in this school.`);
             }
             linkedStudentIds.push(student.id);
           }
         }
 
-        const schoolIdNumber = normalizeOptionalString(input.schoolIdNumber);
         const existingMatch = schoolIdNumber
           ? await this.userRepository.findBySchoolIdNumber(schoolId, schoolIdNumber, {
               includeInactive: true
@@ -460,7 +607,7 @@ export class AdminService {
       const email = normalizeRequiredString(input.email, 'Email').toLowerCase();
       const conflicting = await this.userRepository.findByEmail(email, { includeInactive: true });
       if (conflicting && conflicting.id !== existing.id) {
-        throw new Error(conflictMessage);
+        throw new DomainError(conflictMessage);
       }
     }
 
@@ -470,7 +617,7 @@ export class AdminService {
         includeInactive: true
       });
       if (conflicting && conflicting.id !== existing.id) {
-        throw new Error(conflictMessage);
+        throw new DomainError(conflictMessage);
       }
     }
 
@@ -483,10 +630,15 @@ export class AdminService {
       gradeLevel: input.gradeLevel,
       schoolIdNumber: input.schoolIdNumber,
       section: input.section,
-      address: input.address,
       imageUrl: input.imageUrl,
       phoneNumber: input.phoneNumber,
-      linkedStudentIds: input.linkedStudentIds
+      linkedStudentIds: input.linkedStudentIds,
+      addressLine1: input.addressLine1,
+      addressLine2: input.addressLine2,
+      barangay: input.barangay,
+      city: input.city,
+      province: input.province,
+      zipCode: input.zipCode
     };
 
     if (input.password && input.password.trim().length > 0) {
@@ -509,7 +661,7 @@ export class AdminService {
       });
 
       if (conflicting && conflicting.id !== userId) {
-        throw new Error('A user with that email already exists.');
+        throw new DomainError('A user with that email already exists.');
       }
 
       changes.email = email;
@@ -549,9 +701,7 @@ export class AdminService {
       changes.section = normalizeOptionalString(input.section);
     }
 
-    if (input.address !== undefined) {
-      changes.address = normalizeOptionalString(input.address);
-    }
+    Object.assign(changes, normalizeAddressFields(input));
 
     if (input.imageUrl !== undefined) {
       changes.imageUrl = validateOptionalImageUrl(input.imageUrl);
@@ -562,6 +712,15 @@ export class AdminService {
     }
 
     const nextRole = changes.role ?? existing.role;
+
+    if (input.roleDefinitionId !== undefined) {
+      const roleDefinitionId = normalizeOptionalString(input.roleDefinitionId) ?? null;
+      if (roleDefinitionId) {
+        await this.assertRoleDefinitionAssignable(nextRole, roleDefinitionId);
+      }
+      changes.roleDefinitionId = roleDefinitionId;
+    }
+
     if (input.linkedStudentIds !== undefined) {
       changes.linkedStudentIds =
         nextRole === 'GUARDIAN'
@@ -574,7 +733,7 @@ export class AdminService {
     const updated = await this.userRepository.update(existing.id, schoolId, changes);
 
     if (!updated) {
-      throw new Error('User not found.');
+      throw new DomainError('User not found.', 404);
     }
 
     if (nextRole === 'STUDENT' && input.linkedGuardianIds !== undefined) {
@@ -587,7 +746,7 @@ export class AdminService {
 
   async deactivateUser(schoolId: string, userId: string, actorUserId: string): Promise<ManagedUserView> {
     if (userId === actorUserId) {
-      throw new Error('You cannot deactivate your own account.');
+      throw new DomainError('You cannot deactivate your own account.');
     }
 
     const existing = await this.requireSchoolUser(schoolId, userId);
@@ -599,17 +758,83 @@ export class AdminService {
     const updated = await this.userRepository.deactivate(userId, schoolId);
 
     if (!updated) {
-      throw new Error('User not found.');
+      throw new DomainError('User not found.', 404);
     }
 
     return this.toManagedUserView(updated);
+  }
+
+  async reactivateUser(schoolId: string, userId: string): Promise<ManagedUserView> {
+    const existing = await this.requireSchoolUser(schoolId, userId);
+
+    if (existing.isActive) {
+      return this.toManagedUserView(existing);
+    }
+
+    const updated = await this.userRepository.update(userId, schoolId, { isActive: true });
+
+    if (!updated) {
+      throw new DomainError('User not found.', 404);
+    }
+
+    return this.toManagedUserView(updated);
+  }
+
+  async bulkSetUserStatus(
+    schoolId: string,
+    userIds: string[],
+    isActive: boolean,
+    actorUserId: string
+  ): Promise<{ updated: ManagedUserView[]; errors: { userId: string; message: string }[] }> {
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      throw new DomainError('At least one user ID is required.');
+    }
+
+    if (userIds.length > 100) {
+      throw new DomainError('Cannot update more than 100 users at once.');
+    }
+
+    if (!userIds.every((id) => typeof id === 'string' && id.trim().length > 0)) {
+      throw new DomainError('User IDs must be non-empty strings.');
+    }
+
+    const updated: ManagedUserView[] = [];
+    const errors: { userId: string; message: string }[] = [];
+
+    for (const userId of userIds) {
+      try {
+        if (!isActive && userId === actorUserId) {
+          throw new DomainError('You cannot deactivate your own account.');
+        }
+
+        const existing = await this.requireSchoolUser(schoolId, userId);
+
+        if (existing.isActive === isActive) {
+          updated.push(this.toManagedUserView(existing));
+          continue;
+        }
+
+        const result = await this.userRepository.update(userId, schoolId, { isActive });
+
+        if (!result) {
+          throw new DomainError('User not found.', 404);
+        }
+
+        updated.push(this.toManagedUserView(result));
+      } catch (error) {
+        const message = error instanceof DomainError ? error.message : 'User not found.';
+        errors.push({ userId, message });
+      }
+    }
+
+    return { updated, errors };
   }
 
   private async requireSchool(schoolId: string): Promise<SchoolProfile> {
     const school = await this.tenantRepository.findSchoolById(schoolId);
 
     if (!school) {
-      throw new Error('School not found.');
+      throw new DomainError('School not found.', 404);
     }
 
     return school;
@@ -619,7 +844,7 @@ export class AdminService {
     const user = await this.userRepository.findById(userId);
 
     if (!user || user.schoolId !== schoolId) {
-      throw new Error('User not found.');
+      throw new DomainError('User not found.', 404);
     }
 
     return user;
@@ -631,7 +856,7 @@ export class AdminService {
     for (const studentId of uniqueStudentIds) {
       const student = await this.userRepository.findById(studentId);
       if (!student || student.schoolId !== schoolId || student.role !== 'STUDENT') {
-        throw new Error('Guardian links must reference students from the same school.');
+        throw new DomainError('Guardian links must reference students from the same school.');
       }
     }
 
@@ -644,7 +869,7 @@ export class AdminService {
     for (const guardianId of uniqueGuardianIds) {
       const guardian = await this.userRepository.findById(guardianId);
       if (!guardian || guardian.schoolId !== schoolId || guardian.role !== 'GUARDIAN') {
-        throw new Error('Guardian links must reference guardians from the same school.');
+        throw new DomainError('Guardian links must reference guardians from the same school.');
       }
     }
 
@@ -695,11 +920,17 @@ export class AdminService {
       gradeLevel: user.gradeLevel,
       schoolIdNumber: user.schoolIdNumber,
       section: user.section,
-      address: user.address,
       imageUrl: user.imageUrl,
       phoneNumber: user.phoneNumber ?? null,
       linkedStudentIds: user.linkedStudentIds ?? [],
-      isActive: user.isActive
+      isActive: user.isActive,
+      roleDefinitionId: user.roleDefinitionId ?? null,
+      addressLine1: user.addressLine1,
+      addressLine2: user.addressLine2,
+      barangay: user.barangay,
+      city: user.city,
+      province: user.province,
+      zipCode: user.zipCode
     };
   }
 }

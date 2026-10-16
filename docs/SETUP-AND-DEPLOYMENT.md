@@ -1,6 +1,6 @@
-# PERL — Local Setup & Deployment Guide
+# Perfect Learning (AMoS) — Local Setup & Deployment Guide
 
-This document covers running PERL locally (mock and database modes) and deploying it
+This document covers running Perfect Learning (AMoS) locally (mock and database modes) and deploying it
 safely. **Read the [Required keys for deployment](#required-keys-for-deployment) section
 before any non-local deploy** — after the Phase 7 security hardening pass, the API
 **refuses to start** in a non-development environment if any required secret is missing,
@@ -42,6 +42,9 @@ In mock mode the app boots with seeded sample schools/users (see
 `perl-api/src/repositories/mock/seeds.ts`). The default dev credentials
 (`system@perl.system` / `SystemAdmin123!`, etc.) are fine here and **only** here —
 `NODE_ENV=development` is the one setting that skips the production secret validation.
+`NODE_ENV` must still be explicitly set (`.env.example` ships `NODE_ENV=development`); an
+unset or unrecognized `NODE_ENV` fails to boot rather than silently defaulting to
+development (see below).
 
 ### Useful scripts (`perl-api`)
 
@@ -105,12 +108,15 @@ over HTTPS from an origin that is listed in the API's `ALLOWED_ORIGINS`.
 
 ## 5. Required keys for deployment
 
-> **Fail-closed.** `validateRuntimeEnvironment()` (`perl-api/src/config/env.ts`) runs on
-> startup in **every** environment except an explicit `NODE_ENV=development` or
-> `NODE_ENV=test`. If `NODE_ENV` is unset, misspelled, `staging`, or `production`, the API
-> validates these keys and **throws on startup** if any is missing, still at its in-source
-> default, or below its minimum length. This is deliberate: the old in-source defaults are
-> public in git history and would otherwise allow session forgery.
+> **Fail-closed.** `validateRuntimeEnvironment()` (`perl-api/src/config/env.ts`) first
+> requires `NODE_ENV` to be explicitly set to exactly `development`, `test`, or
+> `production` — an unset, empty, or misspelled `NODE_ENV` (e.g. `staging`, a typo, or
+> simply forgetting to set it) throws immediately on startup
+> (`NODE_ENV must be explicitly set (development|test|production)`) and is never silently
+> treated as `development`. Once `NODE_ENV=production`, the same function additionally
+> validates the keys below and **throws on startup** if any is missing, still at its
+> in-source default, or below its minimum length. This is deliberate: the old in-source
+> defaults are public in git history and would otherwise allow session forgery.
 
 Set `NODE_ENV=production` for a real deployment, and provide **all** of the following.
 
@@ -151,7 +157,26 @@ frontend build.
 | `DB_USER` | Database user, default `perl`. |
 | `DB_NAME` | Database name, default `perl`. |
 
-### 5.4 Optional integrations
+### 5.4 Demo tenant
+
+Opt-in flag that seeds one demo school plus a demo `ADMIN` account, works identically
+against `DATA_LAYER=mock` and `DATA_LAYER=db`, and is idempotent by slug (re-running it —
+including via `npm --prefix perl-api run db:seed` — skips creation if the slug already
+exists). See `perl-api/src/repositories/seedDemoTenant.ts`.
+
+| Key | Notes |
+|---|---|
+| `SEED_DEMO_TENANT` | `true` to create the demo tenant on boot/seed (default `false`). |
+| `DEMO_SCHOOL_NAME` | Display name, default `Perfect Learning Demo Academy`. |
+| `DEMO_SCHOOL_SLUG` | Unique slug, default `perl-demo`. |
+| `DEMO_ADMIN_EMAIL` | Required when `SEED_DEMO_TENANT=true`. |
+| `DEMO_ADMIN_PASSWORD` | Required when `SEED_DEMO_TENANT=true`; **>= 12 chars** in production. |
+
+Production first boot never creates the sample schools seeded in `development`/`test`
+(see `DEPLOYMENT.md` §3) — the demo tenant is the only non-platform account production
+seeding creates, and only with this flag on.
+
+### 5.5 Optional integrations
 
 | Key | When needed |
 |---|---|
@@ -164,7 +189,7 @@ frontend build.
 | `PORT` | API listen port, default `4000`. |
 | `LOGIN_RATE_LIMIT_*`, `DEVICE_SCAN_RATE_LIMIT_*` | Tune rate-limit windows/attempts (sane defaults provided). |
 
-### 5.5 Minimal production `.env` example
+### 5.6 Minimal production `.env` example
 
 ```bash
 NODE_ENV=production

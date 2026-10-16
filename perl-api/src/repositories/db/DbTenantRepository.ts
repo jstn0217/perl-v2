@@ -8,10 +8,11 @@ export class DbTenantRepository implements ITenantRepository {
     await getDbPool().query(
       `INSERT INTO schools (
         id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-        contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-        academic_year_label, deped_school_id, features, sort_order
+        contact_email, sms_enabled, sms_sender_name, phone, timezone,
+        academic_year_label, deped_school_id, features, sort_order,
+        address_line1, address_line2, barangay, city, province, zip_code
       )
-      SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE(MAX(sort_order), 0) + 1
+      SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE(MAX(sort_order), 0) + 1, $15, $16, $17, $18, $19, $20
       FROM schools`,
       [
         school.id,
@@ -24,12 +25,17 @@ export class DbTenantRepository implements ITenantRepository {
         school.contactEmail,
         school.smsEnabled,
         school.smsSenderName,
-        school.address,
         school.phone,
         school.timezone,
         school.academicYearLabel,
         school.depedSchoolId,
-        JSON.stringify(school.features)
+        JSON.stringify(school.features),
+        school.addressLine1,
+        school.addressLine2,
+        school.barangay,
+        school.city,
+        school.province,
+        school.zipCode
       ]
     );
 
@@ -39,8 +45,9 @@ export class DbTenantRepository implements ITenantRepository {
   async findSchoolById(schoolId: string): Promise<SchoolProfile | null> {
     const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-              contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-              academic_year_label, deped_school_id, features
+              contact_email, sms_enabled, sms_sender_name, phone, timezone,
+              academic_year_label, deped_school_id, features,
+              address_line1, address_line2, barangay, city, province, zip_code
        FROM schools
        WHERE id = $1
        LIMIT 1`,
@@ -53,8 +60,9 @@ export class DbTenantRepository implements ITenantRepository {
   async findSchoolBySlug(slug: string): Promise<SchoolProfile | null> {
     const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-              contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-              academic_year_label, deped_school_id, features
+              contact_email, sms_enabled, sms_sender_name, phone, timezone,
+              academic_year_label, deped_school_id, features,
+              address_line1, address_line2, barangay, city, province, zip_code
        FROM schools
        WHERE slug = $1
        LIMIT 1`,
@@ -67,8 +75,9 @@ export class DbTenantRepository implements ITenantRepository {
   async getDefaultSchool(): Promise<SchoolProfile> {
     const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-              contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-              academic_year_label, deped_school_id, features
+              contact_email, sms_enabled, sms_sender_name, phone, timezone,
+              academic_year_label, deped_school_id, features,
+              address_line1, address_line2, barangay, city, province, zip_code
        FROM schools
        ORDER BY sort_order ASC, created_at ASC
        LIMIT 1`
@@ -84,8 +93,9 @@ export class DbTenantRepository implements ITenantRepository {
   async listSchools(): Promise<SchoolProfile[]> {
     const { rows } = await getDbPool().query<SchoolRow>(
       `SELECT id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-              contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-              academic_year_label, deped_school_id, features
+              contact_email, sms_enabled, sms_sender_name, phone, timezone,
+              academic_year_label, deped_school_id, features,
+              address_line1, address_line2, barangay, city, province, zip_code
        FROM schools
        ORDER BY sort_order ASC, created_at ASC`
     );
@@ -114,22 +124,28 @@ export class DbTenantRepository implements ITenantRepository {
       smsEnabled: changes.smsEnabled ?? school.smsEnabled,
       smsSenderName:
         changes.smsSenderName !== undefined ? changes.smsSenderName : school.smsSenderName,
-      address: changes.address !== undefined ? changes.address : school.address,
       phone: changes.phone !== undefined ? changes.phone : school.phone,
       timezone: changes.timezone ?? school.timezone,
       academicYearLabel:
         changes.academicYearLabel !== undefined ? changes.academicYearLabel : school.academicYearLabel,
       depedSchoolId:
         changes.depedSchoolId !== undefined ? changes.depedSchoolId : school.depedSchoolId,
-      features: changes.features ? { ...school.features, ...changes.features } : school.features
+      features: changes.features ? { ...school.features, ...changes.features } : school.features,
+      addressLine1: changes.addressLine1 !== undefined ? changes.addressLine1 : school.addressLine1,
+      addressLine2: changes.addressLine2 !== undefined ? changes.addressLine2 : school.addressLine2,
+      barangay: changes.barangay !== undefined ? changes.barangay : school.barangay,
+      city: changes.city !== undefined ? changes.city : school.city,
+      province: changes.province !== undefined ? changes.province : school.province,
+      zipCode: changes.zipCode !== undefined ? changes.zipCode : school.zipCode
     };
 
     await getDbPool().query(
       `UPDATE schools
        SET name = $1, logo_url = $2, contact_email = $3, primary_color = $4, secondary_color = $5,
-           accent_color = $6, sms_enabled = $7, sms_sender_name = $8, address = $9, phone = $10,
-           timezone = $11, academic_year_label = $12, deped_school_id = $13, features = $14
-       WHERE id = $15`,
+           accent_color = $6, sms_enabled = $7, sms_sender_name = $8, phone = $9,
+           timezone = $10, academic_year_label = $11, deped_school_id = $12, features = $13,
+           address_line1 = $14, address_line2 = $15, barangay = $16, city = $17, province = $18, zip_code = $19
+       WHERE id = $20`,
       [
         next.name,
         next.logoUrl,
@@ -139,12 +155,17 @@ export class DbTenantRepository implements ITenantRepository {
         next.accentColor,
         next.smsEnabled,
         next.smsSenderName,
-        next.address,
         next.phone,
         next.timezone,
         next.academicYearLabel,
         next.depedSchoolId,
         JSON.stringify(next.features),
+        next.addressLine1,
+        next.addressLine2,
+        next.barangay,
+        next.city,
+        next.province,
+        next.zipCode,
         schoolId
       ]
     );

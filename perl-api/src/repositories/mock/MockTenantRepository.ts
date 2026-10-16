@@ -8,6 +8,11 @@ export const resetMockSchools = () => {
   mockSchools = createMockSchools();
 };
 
+// Production must not boot with the public sample schools baked into seeds.ts.
+export const clearMockSchools = () => {
+  mockSchools = [];
+};
+
 export class MockTenantRepository implements ITenantRepository {
   async createSchool(school: SchoolProfile): Promise<SchoolProfile> {
     if (mockSchools.some((entry) => entry.id === school.id || entry.slug === school.slug)) {
@@ -69,8 +74,28 @@ export class MockTenantRepository implements ITenantRepository {
       school.features = { ...school.features, ...changes.features };
     }
 
-    if (changes.address !== undefined) {
-      school.address = changes.address;
+    if (changes.addressLine1 !== undefined) {
+      school.addressLine1 = changes.addressLine1;
+    }
+
+    if (changes.addressLine2 !== undefined) {
+      school.addressLine2 = changes.addressLine2;
+    }
+
+    if (changes.barangay !== undefined) {
+      school.barangay = changes.barangay;
+    }
+
+    if (changes.city !== undefined) {
+      school.city = changes.city;
+    }
+
+    if (changes.province !== undefined) {
+      school.province = changes.province;
+    }
+
+    if (changes.zipCode !== undefined) {
+      school.zipCode = changes.zipCode;
     }
 
     if (changes.phone !== undefined) {

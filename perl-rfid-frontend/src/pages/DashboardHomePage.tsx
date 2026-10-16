@@ -2,8 +2,9 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../providers/auth-context';
 import { useSchoolTheme } from '../providers/SchoolThemeContext';
 import { DashboardInsights } from '../components/DashboardInsights';
+import { formatAddress } from '../lib/address';
 import {
-  canManageSchool,
+  canManageSchoolResources,
   canViewSchoolWorkspace,
   canViewLiveMonitor,
   isPlatformUser,
@@ -15,10 +16,11 @@ export const DashboardHomePage = () => {
   const { school } = useSchoolTheme();
   const firstName = user?.firstName ?? 'there';
   const canMonitor = user ? canViewLiveMonitor(user.role) : false;
-  const canEdit = user ? canManageSchool(user.role) : false;
+  const canEdit = user ? canManageSchoolResources(user.role) : false;
   const canViewWorkspace = user ? canViewSchoolWorkspace(user.role) : false;
   const isPlatform = isPlatformUser(user?.role);
-  const readOnlySupport = isSupportAgent(user?.role);
+  const supportContext = isSupportAgent(user?.role);
+  const schoolAddress = formatAddress(school);
 
   return (
     <section className="overview-shell">
@@ -35,10 +37,10 @@ export const DashboardHomePage = () => {
                   ? `Review attendance for the students linked to your ${school.name} account.`
                   : `Keep arrivals moving and attendance records clear for ${school.name}.`}
           </p>
-          {canViewWorkspace && (school.academicYearLabel || school.address) ? (
+          {canViewWorkspace && (school.academicYearLabel || schoolAddress) ? (
             <div className="overview-hero__meta">
               {school.academicYearLabel ? <span>{school.academicYearLabel}</span> : null}
-              {school.address ? <span>{school.address}</span> : null}
+              {schoolAddress ? <span>{schoolAddress}</span> : null}
             </div>
           ) : null}
         </div>
@@ -78,13 +80,13 @@ export const DashboardHomePage = () => {
         <section className="management-section" aria-labelledby="management-heading">
           <div className="section-heading">
             <div>
-              <p className="panel-label">{readOnlySupport ? 'Support workspace' : 'Administration'}</p>
+              <p className="panel-label">{supportContext ? 'Support workspace' : 'Administration'}</p>
               <h3 id="management-heading">
-                {readOnlySupport ? 'Inspect school records' : 'Manage your school'}
+                {supportContext ? 'Manage this school\'s account' : 'Manage your school'}
               </h3>
               <p className="section-copy">
-                {readOnlySupport
-                  ? `People, scanners, and profile settings for ${school.name} are available without edit controls.`
+                {supportContext
+                  ? `People, scanners, and profile settings for ${school.name} are scoped to this support context.`
                   : `People, scanners, and school identity stay scoped to ${school.name}.`}
               </p>
             </div>

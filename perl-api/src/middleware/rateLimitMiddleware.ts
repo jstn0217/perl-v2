@@ -87,6 +87,19 @@ export const resolveLoginIpRateLimitKey = (req: Request) => {
   return `login-ip:${getClientAddress(req)}`;
 };
 
+// Per-IP cap for the login route, applied alongside the per-account (IP+email)
+// limiter so credential stuffing across many different emails from one IP is
+// still throttled. Hardcoded rather than read from env.ts: env.ts is owned by
+// another in-progress change, and this is a fixed multiple (~4x) of the
+// per-account max (env.rateLimits.loginMaxAttempts), not an independent knob.
+export const LOGIN_IP_RATE_LIMIT_MAX_ATTEMPTS = 20;
+
+export const resolvePublicSubmissionRateLimitKey = (req: Request) => {
+  const slug = typeof req.params.slug === 'string' ? req.params.slug : 'unknown-school';
+
+  return `public-submission:${getClientAddress(req)}:${slug}`;
+};
+
 export const resolveDeviceScanRateLimitKey = (req: Request) => {
   const deviceKey = req.header('x-device-key')?.trim();
   if (deviceKey) {

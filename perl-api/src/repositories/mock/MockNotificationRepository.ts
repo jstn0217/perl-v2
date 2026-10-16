@@ -4,6 +4,10 @@ import type { NotificationTransaction } from '../../types/Notification.js';
 
 let transactions: NotificationTransaction[] = [];
 
+// Hard cap on unbounded whole-school reads (listAllBySchool). Mirrors
+// NOTIFICATION_UNBOUNDED_READ_CAP in DbNotificationRepository.
+const NOTIFICATION_UNBOUNDED_READ_CAP = 5000;
+
 export const resetMockNotificationTransactions = () => {
   transactions = [];
 };
@@ -33,7 +37,8 @@ export class MockNotificationRepository implements INotificationRepository {
   async listAllBySchool(schoolId: string): Promise<NotificationTransaction[]> {
     return transactions
       .filter((transaction) => transaction.schoolId === schoolId)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, NOTIFICATION_UNBOUNDED_READ_CAP);
   }
 
   async deleteBySchool(schoolId: string): Promise<number> {

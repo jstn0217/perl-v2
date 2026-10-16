@@ -1,6 +1,6 @@
 {
-  "name": "PERL Attendance",
-  "short_name": "PERL",
+  "name": "Perfect Learning (AMoS)",
+  "short_name": "AMoS",
   "description": "Multi-tenant RFID attendance workspace for schools.",
   "start_url": "/dashboard",
   "id": "/dashboard",

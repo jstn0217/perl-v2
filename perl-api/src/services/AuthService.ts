@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import type { IUserRepository } from '../repositories/interfaces/IUserRepository.js';
 import type { IPlatformUserRepository } from '../repositories/interfaces/IPlatformUserRepository.js';
+import type { IRoleRepository } from '../repositories/interfaces/IRoleRepository.js';
 import type {
   LoginResult,
   PlatformUserRecord,
@@ -9,6 +10,9 @@ import type {
   UserRole
 } from '../types/User.js';
 import { isPlatformRole } from '../auth/permissions.js';
+import type { PermissionKey } from '../auth/permissionCatalog.js';
+import { resolveUserPermissions } from '../auth/rolePermissions.js';
+import { DomainError } from '../utils/errors.js';
 
 // Fixed bcrypt hash (cost 12) of a throwaway value, generated at module load. Compared against
 // on any not-found login path so a bcrypt.compare always runs and timing stays constant
@@ -26,7 +30,7 @@ const normalizeRequiredString = (value: string, field: string) => {
   const normalized = value.trim();
 
   if (!normalized) {
-    throw new Error(`${field} is required.`);
+    throw new DomainError(`${field} is required.`);
   }
 
   return normalized;
@@ -45,7 +49,7 @@ export class AuthService {
       const passwordMatches = await bcrypt.compare(password, platformUser.passwordHash);
 
       if (!passwordMatches) {
-        throw new Error('Invalid credentials.');
+        throw new DomainError('Invalid credentials.', 401);
       }
 
       return {
@@ -57,7 +61,7 @@ export class AuthService {
     const passwordMatches = await bcrypt.compare(password, user ? user.passwordHash : DUMMY_PASSWORD_HASH);
 
     if (!user || !passwordMatches) {
-      throw new Error('Invalid credentials.');
+      throw new DomainError('Invalid credentials.', 401);
     }
 
     return {
@@ -94,20 +98,20 @@ export class AuthService {
       const updated = await this.platformUserRepository.updateProfile(currentUser.id, changes);
 
       if (!updated) {
-        throw new Error('User not found.');
+        throw new DomainError('User not found.', 404);
       }
 
       return this.toPlatformSessionUser(updated);
     }
 
     if (!currentUser.schoolId) {
-      throw new Error('User not found.');
+      throw new DomainError('User not found.', 404);
     }
 
     const updated = await this.userRepository.update(currentUser.id, currentUser.schoolId, changes);
 
     if (!updated) {
-      throw new Error('User not found.');
+      throw new DomainError('User not found.', 404);
     }
 
     return this.toSessionUser(updated);
@@ -115,12 +119,12 @@ export class AuthService {
 
   private async assertPasswordChange(currentUser: SessionUser, input: UpdateProfileInput): Promise<string> {
     if (!input.currentPassword) {
-      throw new Error('Current password is required to set a new password.');
+      throw new DomainError('Current password is required to set a new password.');
     }
 
     const newPassword = normalizeRequiredString(input.newPassword ?? '', 'New password');
     if (newPassword.length < 8) {
-      throw new Error('New password must be at least 8 characters.');
+      throw new DomainError('New password must be at least 8 characters.');
     }
 
     const existingHash = isPlatformRole(currentUser.role)
@@ -128,7 +132,7 @@ export class AuthService {
       : (await this.userRepository.findById(currentUser.id))?.passwordHash;
 
     if (!existingHash || !(await bcrypt.compare(input.currentPassword, existingHash))) {
-      throw new Error('Current password is incorrect.');
+      throw new DomainError('Current password is incorrect.', 401);
     }
 
     return bcrypt.hash(newPassword, 12);
@@ -136,11 +140,32 @@ export class AuthService {
 
   assertRoleAccess(user: SessionUser, allowedRoles: UserRole[], schoolId: string) {
     if (!allowedRoles.includes(user.role)) {
-      throw new Error('Forbidden');
+      throw new DomainError('Forbidden', 403);
     }
 
     if (!isPlatformRole(user.role) && user.schoolId !== schoolId) {
-      throw new Error('Forbidden');
+      throw new DomainError('Forbidden', 403);
+    }
+  }
+
+  // Permission-catalog counterpart to assertRoleAccess: resolves the user's
+  // effective permission set (custom RoleDefinition if assigned, else base-role
+  // defaults) instead of checking membership in a fixed role list. SYSTEM_ADMIN/
+  // SUPPORT resolve via their hardcoded platform permission sets, unchanged.
+  async assertPermissionAccess(
+    user: SessionUser,
+    roleRepository: IRoleRepository,
+    permission: PermissionKey,
+    schoolId: string
+  ) {
+    const permissions = await resolveUserPermissions(user, roleRepository);
+
+    if (!permissions.includes(permission)) {
+      throw new DomainError('Forbidden', 403);
+    }
+
+    if (!isPlatformRole(user.role) && user.schoolId !== schoolId) {
+      throw new DomainError('Forbidden', 403);
     }
   }
 
@@ -151,7 +176,8 @@ export class AuthService {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
-      role: user.role
+      role: user.role,
+      roleDefinitionId: user.roleDefinitionId ?? null
     };
   }
 

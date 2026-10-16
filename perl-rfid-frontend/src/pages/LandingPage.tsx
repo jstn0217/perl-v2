@@ -34,9 +34,9 @@ export const LandingPage = () => {
   return (
     <main className="public-landing">
       <header className="public-header">
-        <Link className="public-wordmark" to="/" aria-label="PERL home">
+        <Link className="public-wordmark" to="/" aria-label="Perfect Learning (AMoS) home">
           <img src="/brand/perl-mark-96.png" alt="" width="36" height="30" aria-hidden="true" />
-          PERL
+          AMoS
         </Link>
         <Link className="secondary-button secondary-button--link" to="/login">Sign in</Link>
       </header>
@@ -46,7 +46,7 @@ export const LandingPage = () => {
           <p className="panel-label">Attendance, without the guesswork</p>
           <h1>Know who&rsquo;s on campus, the moment they arrive.</h1>
           <p>
-            PERL turns your school&rsquo;s RFID gate into a live, accountable attendance record.
+            Perfect Learning (AMoS) turns your school&rsquo;s RFID gate into a live, accountable attendance record.
             Administrators see every scan as it happens, guardians get notified, and nobody has to
             call the front office to find out if a student made it in.
           </p>
@@ -113,9 +113,9 @@ export const LandingPage = () => {
       <footer className="public-footer">
         <span className="public-wordmark public-wordmark--footer">
           <img src="/brand/perl-mark-96.png" alt="" width="28" height="24" aria-hidden="true" />
-          PERL
+          AMoS
         </span>
-        <p>&copy; {new Date().getFullYear()} PERL School Management. Built for Philippine schools.</p>
+        <p>&copy; {new Date().getFullYear()} Perfect Learning (AMoS). Built for Philippine schools.</p>
       </footer>
     </main>
   );

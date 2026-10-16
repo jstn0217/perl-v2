@@ -11,6 +11,14 @@ import type {
 } from '../types/Notification.js';
 import type { AttendanceDirection } from '../types/Attendance.js';
 import type { UserRecord } from '../types/User.js';
+import { DomainError } from '../utils/errors.js';
+
+// Mirrors the hard cap enforced by DbNotificationRepository/
+// MockNotificationRepository on listAllBySchool. When a school has at least
+// this many records and no date range is given, the repository result may be
+// truncated to the most recent records — require a bounded range instead of
+// silently returning a partial set.
+const NOTIFICATION_UNBOUNDED_READ_CAP = 5000;
 
 const normalizePhilippineMobile = (value: string | null | undefined) => {
   const digits = value?.replace(/\D/g, '') ?? '';
@@ -135,8 +143,16 @@ export class NotificationService {
   }
 
   private async filter(schoolId: string, filters: NotificationFilters) {
+    const records = await this.notificationRepository.listAllBySchool(schoolId);
+
+    if (records.length >= NOTIFICATION_UNBOUNDED_READ_CAP && !filters.from && !filters.to) {
+      throw new DomainError(
+        `This school has more than ${NOTIFICATION_UNBOUNDED_READ_CAP} notification records; provide a from/to date range to narrow the results.`
+      );
+    }
+
     const search = filters.search?.trim().toLocaleLowerCase();
-    return (await this.notificationRepository.listAllBySchool(schoolId)).filter((record) => {
+    return records.filter((record) => {
       if (filters.status && record.status !== filters.status) return false;
       if (filters.direction && record.direction !== filters.direction) return false;
       if (filters.from && Date.parse(record.createdAt) < Date.parse(filters.from)) return false;

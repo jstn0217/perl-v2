@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { InlineAlert } from '../InlineAlert';
+import { LinkPicker } from './LinkPicker';
 import type { ManagedUser, SchoolUserRole } from '../../types/admin';
+import type { AssignableRole } from '../../types/role';
 import type { UserFormState } from './userFormState';
 
 const roleOptions: SchoolUserRole[] = ['ADMIN', 'STAFF', 'STUDENT', 'GUARDIAN'];
@@ -9,6 +11,7 @@ const roleOptions: SchoolUserRole[] = ['ADMIN', 'STAFF', 'STUDENT', 'GUARDIAN'];
 export type UserImageMode = 'upload' | 'url';
 
 interface UserFormProps {
+  assignableRoles: AssignableRole[];
   error?: string | null;
   imageMode: UserImageMode;
   imagePreview: string | null;
@@ -30,6 +33,7 @@ interface UserFormProps {
  * call different API endpoints).
  */
 export const UserForm = ({
+  assignableRoles,
   error,
   imageMode,
   imagePreview,
@@ -160,7 +164,8 @@ export const UserForm = ({
                 ...value,
                 role: event.target.value as SchoolUserRole,
                 linkedStudentIds: event.target.value === 'GUARDIAN' ? value.linkedStudentIds : [],
-                linkedGuardianIds: event.target.value === 'STUDENT' ? value.linkedGuardianIds : []
+                linkedGuardianIds: event.target.value === 'STUDENT' ? value.linkedGuardianIds : [],
+                roleDefinitionId: null
               })
             }
           >
@@ -173,15 +178,82 @@ export const UserForm = ({
         </label>
       </div>
 
-      <label className="field">
-        <span>Address</span>
-        <input
-          type="text"
-          value={value.address}
-          onChange={(event) => setField('address', event.target.value)}
-          placeholder="House / street, barangay, city"
-        />
-      </label>
+      {value.role === 'ADMIN' || value.role === 'STAFF' ? (
+        <label className="field">
+          <span>Custom role</span>
+          <select
+            className="field-select"
+            value={value.roleDefinitionId ?? ''}
+            onChange={(event) => setField('roleDefinitionId', event.target.value || null)}
+          >
+            <option value="">Default permissions</option>
+            {assignableRoles
+              .filter((role) => role.baseRole === value.role)
+              .map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                </option>
+              ))}
+          </select>
+          <small>Leave as default to use standard {value.role} permissions.</small>
+        </label>
+      ) : null}
+
+      <div className="field-grid">
+        <label className="field">
+          <span>Address line 1</span>
+          <input
+            type="text"
+            value={value.addressLine1}
+            onChange={(event) => setField('addressLine1', event.target.value)}
+            placeholder="House / street"
+          />
+        </label>
+        <label className="field">
+          <span>Address line 2</span>
+          <input
+            type="text"
+            value={value.addressLine2}
+            onChange={(event) => setField('addressLine2', event.target.value)}
+            placeholder="Building, unit (optional)"
+          />
+        </label>
+      </div>
+
+      <div className="field-grid">
+        <label className="field">
+          <span>Barangay</span>
+          <input
+            type="text"
+            value={value.barangay}
+            onChange={(event) => setField('barangay', event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>City</span>
+          <input type="text" value={value.city} onChange={(event) => setField('city', event.target.value)} />
+        </label>
+      </div>
+
+      <div className="field-grid">
+        <label className="field">
+          <span>Province</span>
+          <input
+            type="text"
+            value={value.province}
+            onChange={(event) => setField('province', event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>ZIP code</span>
+          <input
+            type="text"
+            value={value.zipCode}
+            onChange={(event) => setField('zipCode', event.target.value)}
+            inputMode="numeric"
+          />
+        </label>
+      </div>
 
       <label className="field">
         <span>{mode === 'create' ? 'Temporary password' : 'Reset password'}</span>
@@ -205,72 +277,6 @@ export const UserForm = ({
           />
           <small>Use a Philippine mobile number. Student attendance messages are sent here.</small>
         </label>
-      ) : null}
-
-      {value.role === 'GUARDIAN' ? (
-        <fieldset className="student-link-fieldset">
-          <legend>Linked students</legend>
-          <p>Select the students whose attendance this guardian can view.</p>
-          <div className="student-link-list">
-            {students.length > 0 ? (
-              students.map((student) => (
-                <label key={student.id}>
-                  <input
-                    type="checkbox"
-                    checked={value.linkedStudentIds.includes(student.id)}
-                    onChange={(event) =>
-                      setField(
-                        'linkedStudentIds',
-                        event.target.checked
-                          ? [...value.linkedStudentIds, student.id]
-                          : value.linkedStudentIds.filter((id) => id !== student.id)
-                      )
-                    }
-                  />
-                  <span>
-                    <strong>{student.firstName} {student.lastName}</strong>
-                    <small>{student.gradeLevel ?? 'No grade'}{student.section ? ` · ${student.section}` : ''}</small>
-                  </span>
-                </label>
-              ))
-            ) : (
-              <p>No student accounts are available to link.</p>
-            )}
-          </div>
-        </fieldset>
-      ) : null}
-
-      {value.role === 'STUDENT' ? (
-        <fieldset className="student-link-fieldset">
-          <legend>Guardians</legend>
-          <p>Select the guardians who can view this student's attendance.</p>
-          <div className="student-link-list">
-            {guardians.length > 0 ? (
-              guardians.map((guardian) => (
-                <label key={guardian.id}>
-                  <input
-                    type="checkbox"
-                    checked={value.linkedGuardianIds.includes(guardian.id)}
-                    onChange={(event) =>
-                      setField(
-                        'linkedGuardianIds',
-                        event.target.checked
-                          ? [...value.linkedGuardianIds, guardian.id]
-                          : value.linkedGuardianIds.filter((id) => id !== guardian.id)
-                      )
-                    }
-                  />
-                  <span>
-                    <strong>{guardian.firstName} {guardian.lastName}</strong>
-                    <small>{guardian.email}</small>
-                  </span>
-                </label>
-              ))
-            ) : (
-              <p>No guardian accounts are available to link.</p>
-            )}
-          </div>
-        </fieldset>
       ) : null}
 
       <div className="field-grid">
@@ -316,6 +322,35 @@ export const UserForm = ({
           />
         </label>
       </div>
+
+      {value.role === 'GUARDIAN' ? (
+        <fieldset className="student-link-fieldset">
+          <legend>Linked students</legend>
+          <p>Select the students whose attendance this guardian can view.</p>
+          <LinkPicker
+            directory={students}
+            noun="students"
+            onChange={(ids) => setField('linkedStudentIds', ids)}
+            secondaryLine={(student) =>
+              `${student.gradeLevel ?? 'No grade'}${student.section ? ` · ${student.section}` : ''}`
+            }
+            selectedIds={value.linkedStudentIds}
+          />
+        </fieldset>
+      ) : null}
+
+      {value.role === 'STUDENT' ? (
+        <fieldset className="student-link-fieldset">
+          <legend>Guardians</legend>
+          <p>Select the guardians who can view this student's attendance.</p>
+          <LinkPicker
+            directory={guardians}
+            noun="guardians"
+            onChange={(ids) => setField('linkedGuardianIds', ids)}
+            selectedIds={value.linkedGuardianIds}
+          />
+        </fieldset>
+      ) : null}
 
       <div className="form-actions">
         <button className="primary-button" type="submit" disabled={saving}>

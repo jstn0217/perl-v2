@@ -3,8 +3,21 @@ import type { DeviceRecord } from '../../types/Device.js';
 import type { SchoolProfile } from '../../types/SchoolProfile.js';
 import type { FeatureKey } from '../../types/SchoolFeature.js';
 import type { SchoolUserRole, UserRecord } from '../../types/User.js';
+import type { PermissionKey } from '../../auth/permissionCatalog.js';
+import type { RoleBaseRole, RoleDefinition } from '../../types/Role.js';
+import type { SubmissionRecord, SubmissionSource, SubmissionStatus, SubmissionType } from '../../types/Submission.js';
+import type { AddressFields } from '../../types/Address.js';
 
-interface SchoolRow {
+interface AddressColumns {
+  address_line1: string | null;
+  address_line2: string | null;
+  barangay: string | null;
+  city: string | null;
+  province: string | null;
+  zip_code: string | null;
+}
+
+interface SchoolRow extends AddressColumns {
   id: string;
   slug: string;
   name: string;
@@ -15,7 +28,6 @@ interface SchoolRow {
   contact_email: string;
   sms_enabled: boolean;
   sms_sender_name: string | null;
-  address: string | null;
   phone: string | null;
   timezone: string;
   academic_year_label: string | null;
@@ -23,7 +35,7 @@ interface SchoolRow {
   features: Partial<Record<FeatureKey, boolean>>;
 }
 
-interface UserRow {
+interface UserRow extends AddressColumns {
   id: string;
   school_id: string;
   email: string;
@@ -38,8 +50,19 @@ interface UserRow {
   image_url: string | null;
   phone_number: string | null;
   linked_student_ids: string | null;
-  address: string | null;
   is_active: boolean;
+  role_definition_id: string | null;
+}
+
+interface RoleDefinitionRow {
+  id: string;
+  name: string;
+  description: string | null;
+  base_role: RoleBaseRole;
+  permissions: PermissionKey[];
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface DeviceRow {
@@ -51,6 +74,24 @@ interface DeviceRow {
   key_last_four: string;
   is_active: boolean;
   last_seen_at: Date | null;
+}
+
+interface SubmissionRow extends AddressColumns {
+  id: string;
+  school_id: string;
+  type: SubmissionType;
+  status: SubmissionStatus;
+  source: SubmissionSource;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string | null;
+  grade_level_applying: string | null;
+  guardian_name: string | null;
+  message: string | null;
+  notes: string | null;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface AttendanceLogRow {
@@ -65,6 +106,15 @@ interface AttendanceLogRow {
   scanned_at: Date;
 }
 
+const mapAddressColumns = (row: AddressColumns): AddressFields => ({
+  addressLine1: row.address_line1,
+  addressLine2: row.address_line2,
+  barangay: row.barangay,
+  city: row.city,
+  province: row.province,
+  zipCode: row.zip_code
+});
+
 export const mapSchoolRow = (row: SchoolRow): SchoolProfile => ({
   id: row.id,
   slug: row.slug,
@@ -78,12 +128,12 @@ export const mapSchoolRow = (row: SchoolRow): SchoolProfile => ({
   contactEmail: row.contact_email,
   smsEnabled: row.sms_enabled,
   smsSenderName: row.sms_sender_name,
-  address: row.address,
   phone: row.phone,
   timezone: row.timezone,
   academicYearLabel: row.academic_year_label,
   depedSchoolId: row.deped_school_id,
-  features: { sms: false, ...row.features }
+  features: { sms: false, enrollment: false, inquiry: false, ...row.features },
+  ...mapAddressColumns(row)
 });
 
 export const mapUserRow = (row: UserRow): UserRecord => ({
@@ -108,8 +158,21 @@ export const mapUserRow = (row: UserRow): UserRecord => ({
       return [];
     }
   })(),
-  address: row.address,
-  isActive: row.is_active
+  isActive: row.is_active,
+  roleDefinitionId: row.role_definition_id,
+  ...mapAddressColumns(row)
+});
+
+export const mapRoleDefinitionRow = (row: RoleDefinitionRow): RoleDefinition => ({
+  id: row.id,
+  name: row.name,
+  description: row.description,
+  baseRole: row.base_role,
+  permissions: row.permissions,
+  isSystem: false,
+  isActive: row.is_active,
+  createdAt: row.created_at.toISOString(),
+  updatedAt: row.updated_at.toISOString()
 });
 
 export const mapDeviceRow = (row: DeviceRow): DeviceRecord => ({
@@ -121,6 +184,25 @@ export const mapDeviceRow = (row: DeviceRow): DeviceRecord => ({
   keyLastFour: row.key_last_four,
   isActive: row.is_active,
   lastSeenAt: row.last_seen_at ? row.last_seen_at.toISOString() : null
+});
+
+export const mapSubmissionRow = (row: SubmissionRow): SubmissionRecord => ({
+  id: row.id,
+  schoolId: row.school_id,
+  type: row.type,
+  status: row.status,
+  source: row.source,
+  firstName: row.first_name,
+  lastName: row.last_name,
+  email: row.email,
+  phone: row.phone,
+  gradeLevelApplying: row.grade_level_applying,
+  guardianName: row.guardian_name,
+  message: row.message,
+  notes: row.notes,
+  createdAt: row.created_at.toISOString(),
+  updatedAt: row.updated_at.toISOString(),
+  ...mapAddressColumns(row)
 });
 
 export const mapAttendanceRow = (row: AttendanceLogRow): AttendanceLogRecord => ({
@@ -135,4 +217,4 @@ export const mapAttendanceRow = (row: AttendanceLogRow): AttendanceLogRecord => 
   scannedAt: row.scanned_at.toISOString()
 });
 
-export type { AttendanceLogRow, DeviceRow, SchoolRow, UserRow };
+export type { AttendanceLogRow, DeviceRow, RoleDefinitionRow, SchoolRow, SubmissionRow, UserRow };

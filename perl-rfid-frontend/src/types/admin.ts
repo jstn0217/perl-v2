@@ -1,10 +1,11 @@
 import type { SchoolTheme } from './school';
+import type { AddressFields } from './address';
 
 export type SchoolUserRole = 'ADMIN' | 'STAFF' | 'STUDENT' | 'GUARDIAN';
 export type PlatformUserRole = 'SYSTEM_ADMIN' | 'SUPPORT';
 export type UserRole = SchoolUserRole | PlatformUserRole;
 
-export interface ManagedUser {
+export interface ManagedUser extends Partial<AddressFields> {
   id: string;
   schoolId: string;
   email: string;
@@ -15,26 +16,27 @@ export interface ManagedUser {
   gradeLevel: string | null;
   schoolIdNumber: string | null;
   section: string | null;
-  address?: string | null;
   imageUrl: string | null;
   phoneNumber: string | null;
   linkedStudentIds: string[];
   isActive: boolean;
+  // Optional custom RoleDefinition assignment (see types/role.ts). Only ever
+  // meaningful for ADMIN/STAFF users; null means "use base-role defaults".
+  roleDefinitionId: string | null;
 }
 
-export interface SchoolProfileUpdatePayload {
+export interface SchoolProfileUpdatePayload extends Partial<AddressFields> {
   name: string;
   logoUrl: string | null;
   contactEmail: string;
   theme: SchoolTheme;
-  address: string | null;
   phone: string | null;
   timezone: string;
   academicYearLabel: string | null;
   depedSchoolId: string | null;
 }
 
-export interface ManagedUserCreatePayload {
+export interface ManagedUserCreatePayload extends Partial<AddressFields> {
   email: string;
   password: string;
   firstName: string;
@@ -44,14 +46,14 @@ export interface ManagedUserCreatePayload {
   gradeLevel?: string | null;
   schoolIdNumber?: string | null;
   section?: string | null;
-  address?: string | null;
   imageUrl?: string | null;
   phoneNumber?: string | null;
   linkedStudentIds?: string[];
   linkedGuardianIds?: string[];
+  roleDefinitionId?: string | null;
 }
 
-export interface ManagedUserUpdatePayload {
+export interface ManagedUserUpdatePayload extends Partial<AddressFields> {
   email?: string;
   password?: string;
   firstName?: string;
@@ -61,11 +63,11 @@ export interface ManagedUserUpdatePayload {
   gradeLevel?: string | null;
   schoolIdNumber?: string | null;
   section?: string | null;
-  address?: string | null;
   imageUrl?: string | null;
   phoneNumber?: string | null;
   linkedStudentIds?: string[];
   linkedGuardianIds?: string[];
+  roleDefinitionId?: string | null;
 }
 
 export interface ManagedUserImportPayload extends Omit<ManagedUserCreatePayload, 'linkedStudentIds'> {

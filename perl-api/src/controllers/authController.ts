@@ -4,6 +4,7 @@ import { env } from '../config/env.js';
 import type { RepositorySet } from '../repositories/index.js';
 import { AuthService } from '../services/AuthService.js';
 import { TenantService } from '../services/TenantService.js';
+import { handleControllerError } from '../utils/errors.js';
 
 const setSessionCookie = (res: Response, token: string) => {
   res.cookie(env.jwtCookieName, token, {
@@ -92,10 +93,7 @@ export const createAuthController = (repositories: RepositorySet) => {
 
         return res.json({ user });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unable to update profile.';
-        const status = message === 'Current password is incorrect.' ? 401 : 400;
-
-        return res.status(status).json({ message });
+        return handleControllerError(res, error, 'authController.updateProfile');
       }
     }
   };

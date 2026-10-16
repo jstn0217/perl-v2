@@ -1,21 +1,48 @@
 import type { IAttendanceRepository } from '../repositories/interfaces/IAttendanceRepository.js';
 import type { IAuditRepository } from '../repositories/interfaces/IAuditRepository.js';
 import type { IDeviceRepository } from '../repositories/interfaces/IDeviceRepository.js';
+import type { ISubmissionRepository } from '../repositories/interfaces/ISubmissionRepository.js';
 import type { ITenantRepository } from '../repositories/interfaces/ITenantRepository.js';
 import type { IUserRepository } from '../repositories/interfaces/IUserRepository.js';
 import type { SchoolDataExport, SchoolDataSnapshot, UserDataExport } from '../types/SchoolData.js';
 import type { AttendanceLogRecord } from '../types/Attendance.js';
 import type { DeviceRecord } from '../types/Device.js';
 import type { SchoolProfile } from '../types/SchoolProfile.js';
+import type { SubmissionRecord } from '../types/Submission.js';
 import type { UserRecord } from '../types/User.js';
+import { ADDRESS_FIELD_KEYS } from '../types/Address.js';
+import { DomainError } from '../utils/errors.js';
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 const isString = (value: unknown): value is string => typeof value === 'string';
 const isNullableString = (value: unknown): value is string | null => value === null || isString(value);
+// Structured address fields didn't exist in backups taken before this feature shipped,
+// so a missing key (undefined) is accepted here alongside null/string.
+const isOptionalNullableString = (value: unknown): value is string | null | undefined =>
+  value === undefined || isNullableString(value);
+const hasStructuredAddressFields = (value: Record<string, unknown>): boolean =>
+  ADDRESS_FIELD_KEYS.every((key) => isOptionalNullableString(value[key]));
 const hexColorPattern = /^#[0-9a-fA-F]{6}$/;
 const hashPattern = /^[0-9a-f]{64}$/;
 const maxBackupRecords = 100_000;
+
+// Backups taken before structured addresses shipped carry a single legacy `address`
+// string instead of the six structured fields. Maps that legacy value onto
+// addressLine1 so old backups keep restoring instead of failing validation.
+const migrateLegacyAddress = <T extends Record<string, unknown>>(record: T): T => {
+  const hasStructuredValue = ADDRESS_FIELD_KEYS.some((key) => {
+    const value = record[key];
+    return typeof value === 'string' && value.trim().length > 0;
+  });
+  const legacyAddress = record.address;
+
+  if (!hasStructuredValue && typeof legacyAddress === 'string' && legacyAddress.trim().length > 0) {
+    return { ...record, addressLine1: legacyAddress };
+  }
+
+  return record;
+};
 
 const isSchoolProfile = (value: unknown, schoolId: string): value is SchoolProfile => {
   if (!isObject(value) || !isObject(value.theme)) return false;
@@ -31,7 +58,8 @@ const isSchoolProfile = (value: unknown, schoolId: string): value is SchoolProfi
     isString(value.theme.secondaryColor) &&
     hexColorPattern.test(value.theme.secondaryColor) &&
     isString(value.theme.accentColor) &&
-    hexColorPattern.test(value.theme.accentColor)
+    hexColorPattern.test(value.theme.accentColor) &&
+    hasStructuredAddressFields(value)
   );
 };
 
@@ -53,7 +81,8 @@ const isUserRecord = (value: unknown, schoolId: string): value is UserRecord => 
     isNullableString(value.imageUrl) &&
     (value.linkedStudentIds === undefined ||
       (Array.isArray(value.linkedStudentIds) && value.linkedStudentIds.every(isString))) &&
-    typeof value.isActive === 'boolean'
+    typeof value.isActive === 'boolean' &&
+    hasStructuredAddressFields(value)
   );
 };
 
@@ -70,6 +99,35 @@ const isDeviceRecord = (value: unknown, schoolId: string): value is DeviceRecord
     isString(value.keyLastFour) &&
     value.keyLastFour.length === 4 &&
     typeof value.isActive === 'boolean'
+  );
+};
+
+const submissionTypes = ['ENROLLMENT', 'INQUIRY'];
+const submissionStatuses = ['NEW', 'IN_REVIEW', 'ACCEPTED', 'DECLINED'];
+const submissionSources = ['PUBLIC', 'MANUAL'];
+
+const isSubmissionRecord = (value: unknown, schoolId: string): value is SubmissionRecord => {
+  if (!isObject(value)) return false;
+
+  return (
+    isString(value.id) &&
+    value.schoolId === schoolId &&
+    submissionTypes.includes(String(value.type)) &&
+    submissionStatuses.includes(String(value.status)) &&
+    submissionSources.includes(String(value.source)) &&
+    isString(value.firstName) &&
+    isString(value.lastName) &&
+    isString(value.email) &&
+    isNullableString(value.phone) &&
+    isNullableString(value.gradeLevelApplying) &&
+    isNullableString(value.guardianName) &&
+    isNullableString(value.message) &&
+    isNullableString(value.notes) &&
+    isString(value.createdAt) &&
+    Number.isFinite(Date.parse(value.createdAt)) &&
+    isString(value.updatedAt) &&
+    Number.isFinite(Date.parse(value.updatedAt)) &&
+    hasStructuredAddressFields(value)
   );
 };
 
@@ -112,7 +170,8 @@ export class SchoolDataService {
     private readonly userRepository: IUserRepository,
     private readonly deviceRepository: IDeviceRepository,
     private readonly attendanceRepository: IAttendanceRepository,
-    private readonly auditRepository: IAuditRepository
+    private readonly auditRepository: IAuditRepository,
+    private readonly submissionRepository: ISubmissionRepository
   ) {}
 
   async exportSchool(schoolId: string): Promise<SchoolDataExport> {
@@ -123,13 +182,14 @@ export class SchoolDataService {
 
     return {
       format: 'perl-school-export',
-      version: 1,
+      version: 2,
       exportedAt: snapshot.exportedAt,
       school: snapshot.school,
       users: snapshot.users.map(toPortableUser),
       devices: snapshot.devices.map(toPortableDevice),
       attendanceLogs: snapshot.attendanceLogs,
-      auditRecords: auditPage.records
+      auditRecords: auditPage.records,
+      submissions: snapshot.submissions
     };
   }
 
@@ -165,19 +225,19 @@ export class SchoolDataService {
     actorUserId: string
   ): Promise<{ deleted: { user: number; attendanceLogs: number } }> {
     if (userId === actorUserId) {
-      throw new Error('You cannot erase your own account.');
+      throw new DomainError('You cannot erase your own account.');
     }
 
     const user = await this.requireSchoolUser(schoolId, userId);
 
     if (confirmationEmail.trim().toLowerCase() !== user.email.toLowerCase()) {
-      throw new Error('Type the user email to confirm data erasure.');
+      throw new DomainError('Type the user email to confirm data erasure.');
     }
 
     const userDeleted = await this.userRepository.delete(userId, schoolId);
 
     if (!userDeleted) {
-      throw new Error('User not found.');
+      throw new DomainError('User not found.', 404);
     }
 
     const attendanceLogs = await this.attendanceRepository.deleteByUser(schoolId, userId);
@@ -193,14 +253,15 @@ export class SchoolDataService {
     const school = await this.requireSchool(schoolId);
 
     if (confirmation !== school.slug) {
-      throw new Error('Type the school slug to confirm data deletion.');
+      throw new DomainError('Type the school slug to confirm data deletion.');
     }
 
     const attendanceLogs = await this.attendanceRepository.deleteBySchool(schoolId);
     const devices = await this.deviceRepository.deleteBySchool(schoolId);
+    const submissions = await this.submissionRepository.deleteBySchool(schoolId);
     const users = await this.userRepository.deleteBySchoolExcept(schoolId, preserveUserId);
 
-    return { deleted: { attendanceLogs, devices, users } };
+    return { deleted: { attendanceLogs, devices, submissions, users } };
   }
 
   async restoreSchool(schoolId: string, input: unknown): Promise<SchoolDataSnapshot> {
@@ -215,18 +276,32 @@ export class SchoolDataService {
       } catch (rollbackError) {
         const restoreMessage = restoreError instanceof Error ? restoreError.message : 'Unknown restore error.';
         const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : 'Unknown rollback error.';
-        throw new Error(`School restore failed (${restoreMessage}) and rollback failed (${rollbackMessage}).`, {
-          cause: rollbackError
-        });
+        // Both the restore and the rollback failed: the school may be in a partial state.
+        // Thrown as a plain Error so the controller logs the detail server-side and the
+        // client gets a generic 500 instead of internal repository/DB messages.
+        throw new Error(
+          `School restore failed (${restoreMessage}) and rollback also failed (${rollbackMessage}).`,
+          { cause: rollbackError }
+        );
       }
 
-      throw restoreError;
+      if (restoreError instanceof DomainError) {
+        throw restoreError;
+      }
+      // Repository-level failures (mock uniqueness checks, DB constraint errors) carry
+      // internal detail that must not reach the client — surface a stable message instead.
+      throw new DomainError(
+        'School restore failed: the backup could not be applied. Previous data was restored.',
+        400,
+        { cause: restoreError }
+      );
     }
   }
 
   private async applySnapshot(schoolId: string, snapshot: SchoolDataSnapshot): Promise<SchoolDataSnapshot> {
     await this.attendanceRepository.deleteBySchool(schoolId);
     await this.deviceRepository.deleteBySchool(schoolId);
+    await this.submissionRepository.deleteBySchool(schoolId);
     await this.userRepository.deleteBySchool(schoolId);
 
     const school = await this.tenantRepository.updateSchoolProfile(schoolId, {
@@ -234,15 +309,20 @@ export class SchoolDataService {
       logoUrl: snapshot.school.logoUrl,
       contactEmail: snapshot.school.contactEmail,
       theme: snapshot.school.theme,
-      address: snapshot.school.address,
       phone: snapshot.school.phone,
       timezone: snapshot.school.timezone,
       academicYearLabel: snapshot.school.academicYearLabel,
-      depedSchoolId: snapshot.school.depedSchoolId
+      depedSchoolId: snapshot.school.depedSchoolId,
+      addressLine1: snapshot.school.addressLine1,
+      addressLine2: snapshot.school.addressLine2,
+      barangay: snapshot.school.barangay,
+      city: snapshot.school.city,
+      province: snapshot.school.province,
+      zipCode: snapshot.school.zipCode
     });
 
     if (!school) {
-      throw new Error('School not found.');
+      throw new DomainError('School not found.', 404);
     }
 
     for (const user of snapshot.users) {
@@ -257,6 +337,10 @@ export class SchoolDataService {
       await this.attendanceRepository.restore(log);
     }
 
+    for (const submission of snapshot.submissions) {
+      await this.submissionRepository.create(submission);
+    }
+
     return {
       ...snapshot,
       school
@@ -264,21 +348,23 @@ export class SchoolDataService {
   }
 
   private async createSnapshot(schoolId: string): Promise<SchoolDataSnapshot> {
-    const [school, users, devices, attendanceLogs] = await Promise.all([
+    const [school, users, devices, attendanceLogs, submissions] = await Promise.all([
       this.requireSchool(schoolId),
       this.userRepository.listBySchool(schoolId),
       this.deviceRepository.listBySchool(schoolId),
-      this.attendanceRepository.listAllBySchool(schoolId)
+      this.attendanceRepository.listAllBySchool(schoolId),
+      this.submissionRepository.listAllBySchool(schoolId)
     ]);
 
     return {
       format: 'perl-school-backup',
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       school,
       users,
       devices,
-      attendanceLogs
+      attendanceLogs,
+      submissions
     };
   }
 
@@ -286,7 +372,7 @@ export class SchoolDataService {
     const school = await this.tenantRepository.findSchoolById(schoolId);
 
     if (!school) {
-      throw new Error('School not found.');
+      throw new DomainError('School not found.', 404);
     }
 
     return school;
@@ -296,42 +382,63 @@ export class SchoolDataService {
     const user = await this.userRepository.findById(userId);
 
     if (!user || user.schoolId !== schoolId) {
-      throw new Error('User not found.');
+      throw new DomainError('User not found.', 404);
     }
 
     return user;
   }
 
   private parseSnapshot(input: unknown, schoolId: string): SchoolDataSnapshot {
-    if (!isObject(input) || input.format !== 'perl-school-backup' || input.version !== 1) {
-      throw new Error('A valid PERL school backup is required.');
+    if (!isObject(input) || input.format !== 'perl-school-backup' || input.version !== 2) {
+      throw new DomainError('A valid Perfect Learning (AMoS) school backup is required.');
     }
 
     if (
-      !isSchoolProfile(input.school, schoolId) ||
+      !isObject(input.school) ||
       !isString(input.exportedAt) ||
       !Number.isFinite(Date.parse(input.exportedAt)) ||
       !Array.isArray(input.users) ||
       !Array.isArray(input.devices) ||
-      !Array.isArray(input.attendanceLogs)
+      !Array.isArray(input.attendanceLogs) ||
+      !Array.isArray(input.submissions)
     ) {
-      throw new Error('Backup school scope does not match the target school.');
+      throw new DomainError('Backup school scope does not match the target school.');
     }
 
-    const recordCount = input.users.length + input.devices.length + input.attendanceLogs.length;
+    // Backups taken before structured addresses shipped carry a single legacy
+    // `address` string per record instead of the six structured fields — map it
+    // onto addressLine1 before validating, so old backups still restore cleanly.
+    const migratedSchool = migrateLegacyAddress(input.school);
+    const migratedUsers = input.users.map((user) => (isObject(user) ? migrateLegacyAddress(user) : user));
+    const migratedSubmissions = input.submissions.map((submission) =>
+      isObject(submission) ? migrateLegacyAddress(submission) : submission
+    );
+
+    if (!isSchoolProfile(migratedSchool, schoolId)) {
+      throw new DomainError('Backup school scope does not match the target school.');
+    }
+
+    const recordCount =
+      migratedUsers.length + input.devices.length + input.attendanceLogs.length + migratedSubmissions.length;
     if (recordCount > maxBackupRecords) {
-      throw new Error(`Backup exceeds the ${maxBackupRecords}-record restore limit.`);
+      throw new DomainError(`Backup exceeds the ${maxBackupRecords}-record restore limit.`);
     }
 
     if (
-      !input.users.every((user) => isUserRecord(user, schoolId)) ||
+      !migratedUsers.every((user) => isUserRecord(user, schoolId)) ||
       !input.devices.every((device) => isDeviceRecord(device, schoolId)) ||
-      !input.attendanceLogs.every((log) => isAttendanceRecord(log, schoolId))
+      !input.attendanceLogs.every((log) => isAttendanceRecord(log, schoolId)) ||
+      !migratedSubmissions.every((submission) => isSubmissionRecord(submission, schoolId))
     ) {
-      throw new Error('Backup contains invalid or cross-school records.');
+      throw new DomainError('Backup contains invalid or cross-school records.');
     }
 
-    const snapshot = input as unknown as SchoolDataSnapshot;
+    const snapshot = {
+      ...input,
+      school: migratedSchool,
+      users: migratedUsers,
+      submissions: migratedSubmissions
+    } as unknown as SchoolDataSnapshot;
     const userIds = snapshot.users.map((user) => user.id);
     const deviceIds = snapshot.devices.map((device) => device.id);
 
@@ -341,9 +448,10 @@ export class SchoolDataService {
       hasDuplicates(snapshot.users.flatMap((user) => (user.cardUid ? [user.cardUid] : []))) ||
       hasDuplicates(deviceIds) ||
       hasDuplicates(snapshot.devices.map((device) => device.keyHash)) ||
-      hasDuplicates(snapshot.attendanceLogs.map((log) => log.id))
+      hasDuplicates(snapshot.attendanceLogs.map((log) => log.id)) ||
+      hasDuplicates(snapshot.submissions.map((submission) => submission.id))
     ) {
-      throw new Error('Backup contains duplicate identifiers or credentials.');
+      throw new DomainError('Backup contains duplicate identifiers or credentials.');
     }
 
     const userIdSet = new Set(userIds);
@@ -362,7 +470,7 @@ export class SchoolDataService {
           (user.linkedStudentIds ?? []).some((studentId) => !studentsById.has(studentId))
       )
     ) {
-      throw new Error('Backup contains invalid user, guardian, attendance, or device references.');
+      throw new DomainError('Backup contains invalid user, guardian, attendance, or device references.');
     }
 
     return snapshot;

@@ -1,6 +1,15 @@
 export type DataLayer = 'mock' | 'db';
 export type ImageStorage = 'mock' | 's3';
 
+// Load ./.env into process.env if present (Node 21+ built-in; already-set variables win,
+// so production platforms that inject real env vars are unaffected). Without this the
+// documented `cp .env.example .env` setup was never actually read by the app.
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env file — rely on the process environment.
+}
+
 const defaultAllowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 const defaultJwtSecret = 'dev-phase-2-secret';
 const defaultDbPassword = 'perl_dev_password';
@@ -101,6 +110,13 @@ export const env = {
     apiKey: process.env.SEMAPHORE_API_KEY ?? process.env.SMS_API_KEY ?? '',
     senderName: process.env.SEMAPHORE_SENDER_NAME ?? 'SEMAPHORE',
     endpoint: process.env.SEMAPHORE_API_URL ?? 'https://api.semaphore.co/api/v4/messages'
+  },
+  demoTenant: {
+    seedEnabled: resolveBoolean(process.env.SEED_DEMO_TENANT, false),
+    schoolName: process.env.DEMO_SCHOOL_NAME ?? 'Perfect Learning Demo Academy',
+    schoolSlug: process.env.DEMO_SCHOOL_SLUG ?? 'perl-demo',
+    adminEmail: process.env.DEMO_ADMIN_EMAIL ?? '',
+    adminPassword: process.env.DEMO_ADMIN_PASSWORD ?? ''
   }
 };
 
@@ -127,9 +143,22 @@ interface ProductionEnvironment {
     provider: 'mock' | 'semaphore';
     apiKey: string;
   };
+  demoTenant: {
+    seedEnabled: boolean;
+    adminEmail: string;
+    adminPassword: string;
+  };
 }
 
+const validNodeEnvironments = ['development', 'test', 'production'];
+
 export const validateRuntimeEnvironment = (config: ProductionEnvironment = env) => {
+  const rawNodeEnvironment = process.env.NODE_ENV;
+
+  if (!rawNodeEnvironment || !validNodeEnvironments.includes(rawNodeEnvironment)) {
+    throw new Error('NODE_ENV must be explicitly set (development|test|production)');
+  }
+
   if (config.nodeEnvironment === 'development' || config.nodeEnvironment === 'test') return;
 
   const errors: string[] = [];
@@ -183,6 +212,15 @@ export const validateRuntimeEnvironment = (config: ProductionEnvironment = env) 
     errors.push(
       'Enabled production SMS requires SMS_PROVIDER=semaphore and a configured SEMAPHORE_API_KEY.'
     );
+  }
+  if (config.demoTenant.seedEnabled) {
+    if (!config.demoTenant.adminEmail || !config.demoTenant.adminPassword) {
+      errors.push(
+        'DEMO_ADMIN_EMAIL and DEMO_ADMIN_PASSWORD are required when SEED_DEMO_TENANT=true.'
+      );
+    } else if (config.demoTenant.adminPassword.length < 12) {
+      errors.push('DEMO_ADMIN_PASSWORD must be at least 12 characters when SEED_DEMO_TENANT=true.');
+    }
   }
 
   if (errors.length > 0) {

@@ -12,6 +12,7 @@ export const auditActions = [
   'USER_UPDATED',
   'USER_IMAGE_UPDATED',
   'USER_DEACTIVATED',
+  'USER_REACTIVATED',
   'DEVICE_REGISTERED',
   'DEVICE_KEY_ROTATED',
   'DEVICE_DEACTIVATED',
@@ -25,19 +26,28 @@ export const auditActions = [
   'SUPPORT_SCAN_SIMULATED',
   'ATTENDANCE_LOGS_VIEWED',
   'ATTENDANCE_STREAM_OPENED',
-  'SCHOOL_DATA_VIEWED'
+  'SCHOOL_DATA_VIEWED',
+  'ROLE_CREATED',
+  'ROLE_UPDATED',
+  'ROLE_DEACTIVATED',
+  'ROLE_REACTIVATED',
+  'SUBMISSION_CREATED',
+  'SUBMISSION_UPDATED'
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];
 
 export interface AuditRecord {
   id: string;
-  schoolId: string;
+  // Null for platform-wide actions that aren't scoped to any single school —
+  // currently only role-catalog mutations (ROLE_CREATED etc.), since
+  // RoleDefinition has no schoolId (custom roles are shared across schools).
+  schoolId: string | null;
   actorUserId: string;
   actorRole: UserRole;
   supportInitiated: boolean;
   action: AuditAction;
-  targetType: 'SCHOOL' | 'USER' | 'DEVICE';
+  targetType: 'SCHOOL' | 'USER' | 'DEVICE' | 'ROLE' | 'SUBMISSION';
   targetId: string | null;
   changeSummary: string;
   occurredAt: string;

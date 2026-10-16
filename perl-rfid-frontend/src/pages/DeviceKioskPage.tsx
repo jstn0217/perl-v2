@@ -91,7 +91,7 @@ export const DeviceKioskPage = () => {
           <div className="brand-lockup">
             <SchoolMark name={school.name} logoUrl={school.logoUrl} />
             <div>
-              <p className="eyebrow">PERL attendance</p>
+              <p className="eyebrow">AMoS attendance</p>
               <h1>Device kiosk</h1>
             </div>
           </div>
@@ -186,7 +186,7 @@ export const DeviceKioskPage = () => {
 
         <footer className="app-footer">
           <img src="/brand/perl-mark-96.png" alt="" width="20" height="17" aria-hidden="true" />
-          <span>Powered by PERL</span>
+          <span>Powered by AMoS</span>
         </footer>
       </section>
     </main>

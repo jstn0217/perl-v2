@@ -8,6 +8,8 @@ import { createAuthRoutes } from './routes/authRoutes.js';
 import { createHealthRoutes } from './routes/healthRoutes.js';
 import { createSchoolRoutes } from './routes/schoolRoutes.js';
 import { createSupportRoutes } from './routes/supportRoutes.js';
+import { createRoleRoutes } from './routes/roleRoutes.js';
+import { createPublicRoutes } from './routes/publicRoutes.js';
 import type { RepositorySet } from './repositories/index.js';
 import { createImageStorage, type IImageStorage } from './storage/index.js';
 import { createSmsGateway, type ISmsGateway } from './notifications/index.js';
@@ -46,6 +48,8 @@ export const createApp = (
   app.use('/api', createSchoolRoutes(repositories));
   app.use('/api', createAdminRoutes(repositories, imageStorage));
   app.use('/api', createSupportRoutes(repositories));
+  app.use('/api', createRoleRoutes(repositories));
+  app.use('/api', createPublicRoutes(repositories));
 
   app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (res.headersSent) {

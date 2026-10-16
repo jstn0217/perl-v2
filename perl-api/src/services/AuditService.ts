@@ -3,12 +3,19 @@ import type { IAuditRepository } from '../repositories/interfaces/IAuditReposito
 import type { AuditAction, AuditFilters, AuditPage, AuditRecord } from '../types/Audit.js';
 import type { SessionUser } from '../types/User.js';
 import { isPlatformRole } from '../auth/permissions.js';
+import { DomainError } from '../utils/errors.js';
+
+// Mirrors the hard cap enforced by DbAuditRepository/MockAuditRepository on
+// findAll. When there are at least this many records and no date range is
+// given, the repository result may be truncated to the most recent records —
+// require a bounded range instead of silently returning a partial set.
+const AUDIT_UNBOUNDED_READ_CAP = 5000;
 
 export class AuditService {
   constructor(private readonly auditRepository: IAuditRepository) {}
 
   async record(
-    schoolId: string,
+    schoolId: string | null,
     actor: SessionUser,
     action: AuditAction,
     targetType: AuditRecord['targetType'],
@@ -55,6 +62,13 @@ export class AuditService {
 
   async exportFilteredRecords(filters: AuditFilters, schoolId?: string): Promise<AuditRecord[]> {
     const records = await this.auditRepository.findAll(schoolId);
+
+    if (records.length >= AUDIT_UNBOUNDED_READ_CAP && !filters.from && !filters.to) {
+      throw new DomainError(
+        `There are more than ${AUDIT_UNBOUNDED_READ_CAP} audit records; provide a from/to date range to narrow the results.`
+      );
+    }
+
     const search = filters.search?.trim().toLocaleLowerCase();
 
     return records.filter((record) => {

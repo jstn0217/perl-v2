@@ -1,7 +1,8 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DeviceListQuery, IDeviceRepository } from '../repositories/interfaces/IDeviceRepository.js';
 import type { PagedResult } from '../types/Pagination.js';
 import type { DeviceRecord, DeviceView } from '../types/Device.js';
+import { DomainError } from '../utils/errors.js';
 
 export interface RegisteredDevice {
   device: DeviceView;
@@ -28,16 +29,16 @@ export class DeviceService {
     const normalizedLocation = location?.trim();
 
     if (!normalizedName) {
-      throw new Error('Device name is required.');
+      throw new DomainError('Device name is required.');
     }
 
     if (!normalizedLocation) {
-      throw new Error('Device location is required.');
+      throw new DomainError('Device location is required.');
     }
 
     const deviceKey = randomBytes(24).toString('hex');
     const device: DeviceRecord = {
-      id: `device-${schoolId}-${Date.now()}`,
+      id: `device-${schoolId}-${randomUUID()}`,
       schoolId,
       name: normalizedName,
       location: normalizedLocation,
@@ -59,13 +60,13 @@ export class DeviceService {
     const normalizedKey = deviceKey.trim();
 
     if (!normalizedKey) {
-      throw new Error('Device key is required.');
+      throw new DomainError('Device key is required.');
     }
 
     const device = await this.deviceRepository.findByKeyHash(hashDeviceKey(normalizedKey));
 
     if (!device) {
-      throw new Error('Invalid device key.');
+      throw new DomainError('Invalid device key.', 401);
     }
 
     return device;
@@ -75,7 +76,7 @@ export class DeviceService {
     const existing = await this.requireSchoolDevice(schoolId, deviceId);
 
     if (!existing.isActive) {
-      throw new Error('Inactive devices cannot rotate keys.');
+      throw new DomainError('Inactive devices cannot rotate keys.');
     }
 
     const deviceKey = randomBytes(24).toString('hex');
@@ -85,7 +86,7 @@ export class DeviceService {
       isActive: true
     });
 
-    if (!updated) throw new Error('Device not found.');
+    if (!updated) throw new DomainError('Device not found.', 404);
 
     return { device: this.toDeviceView(updated), deviceKey };
   }
@@ -98,7 +99,7 @@ export class DeviceService {
       isActive: false
     });
 
-    if (!updated) throw new Error('Device not found.');
+    if (!updated) throw new DomainError('Device not found.', 404);
 
     return this.toDeviceView(updated);
   }
@@ -107,7 +108,7 @@ export class DeviceService {
     const device = await this.deviceRepository.findById(deviceId);
 
     if (!device || device.schoolId !== schoolId) {
-      throw new Error('Device not found.');
+      throw new DomainError('Device not found.', 404);
     }
 
     return device;

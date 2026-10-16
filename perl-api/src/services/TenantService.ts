@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { ITenantRepository } from '../repositories/interfaces/ITenantRepository.js';
 import type { SchoolProfile } from '../types/SchoolProfile.js';
 import type { FeatureKey } from '../types/SchoolFeature.js';
+import type { AddressFields } from '../types/Address.js';
+import { DomainError } from '../utils/errors.js';
 
 export interface CreateSchoolInput {
   name: string;
@@ -25,7 +27,7 @@ export class TenantService {
     const school = await this.tenantRepository.findSchoolById(schoolId);
 
     if (!school) {
-      throw new Error('School not found.');
+      throw new DomainError('School not found.', 404);
     }
 
     return school;
@@ -49,21 +51,21 @@ export class TenantService {
     const contactEmail = input.contactEmail?.trim().toLowerCase();
 
     if (!name || name.length < 2) {
-      throw new Error('School name must be at least 2 characters.');
+      throw new DomainError('School name must be at least 2 characters.');
     }
     if (!slug || !schoolSlugPattern.test(slug) || slug.length > 128) {
-      throw new Error('School slug must contain lowercase letters, numbers, and single hyphens only.');
+      throw new DomainError('School slug must contain lowercase letters, numbers, and single hyphens only.');
     }
     if (!contactEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
-      throw new Error('A valid school contact email is required.');
+      throw new DomainError('A valid school contact email is required.');
     }
     if (await this.tenantRepository.findSchoolBySlug(slug)) {
-      throw new Error('That school slug is already in use.');
+      throw new DomainError('That school slug is already in use.');
     }
 
     const theme = { ...defaultTheme, ...input.theme };
     if (Object.values(theme).some((color) => !hexColorPattern.test(color))) {
-      throw new Error('School theme colors must use six-digit hex values.');
+      throw new DomainError('School theme colors must use six-digit hex values.');
     }
 
     return this.tenantRepository.createSchool({
@@ -75,8 +77,13 @@ export class TenantService {
       contactEmail,
       smsEnabled: false,
       smsSenderName: null,
-      features: { sms: false },
-      address: null,
+      features: { sms: false, enrollment: false, inquiry: false },
+      addressLine1: null,
+      addressLine2: null,
+      barangay: null,
+      city: null,
+      province: null,
+      zipCode: null,
       phone: null,
       timezone: 'Asia/Manila',
       academicYearLabel: null,
@@ -93,18 +100,18 @@ export class TenantService {
         | 'logoUrl'
         | 'contactEmail'
         | 'theme'
-        | 'address'
         | 'phone'
         | 'timezone'
         | 'academicYearLabel'
         | 'depedSchoolId'
       >
-    >
+    > &
+      Partial<AddressFields>
   ): Promise<SchoolProfile> {
     const updated = await this.tenantRepository.updateSchoolProfile(schoolId, changes);
 
     if (!updated) {
-      throw new Error('School not found.');
+      throw new DomainError('School not found.', 404);
     }
 
     return updated;
@@ -121,7 +128,7 @@ export class TenantService {
     });
 
     if (!updated) {
-      throw new Error('School not found.');
+      throw new DomainError('School not found.', 404);
     }
 
     return updated;

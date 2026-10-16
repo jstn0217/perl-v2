@@ -8,6 +8,7 @@ import {
   sendCsvColumnDownload,
   type CsvColumn
 } from '../utils/csv.js';
+import { DomainError, handleControllerError } from '../utils/errors.js';
 
 const columns: CsvColumn<NotificationTransaction>[] = [
   { key: 'createdAt', label: 'Created at', value: (row) => row.createdAt },
@@ -34,13 +35,13 @@ const readFilters = (query: Request['query']): NotificationFilters => {
   const from = text(query.from);
   const to = text(query.to);
   if (status && !['QUEUED', 'SENT', 'FAILED', 'SKIPPED'].includes(status)) {
-    throw new Error('Invalid SMS status filter.');
+    throw new DomainError('Invalid SMS status filter.');
   }
   if (direction && !['IN', 'OUT'].includes(direction)) {
-    throw new Error('Invalid SMS direction filter.');
+    throw new DomainError('Invalid SMS direction filter.');
   }
-  if (from && Number.isNaN(Date.parse(from))) throw new Error('Invalid start date.');
-  if (to && Number.isNaN(Date.parse(to))) throw new Error('Invalid end date.');
+  if (from && Number.isNaN(Date.parse(from))) throw new DomainError('Invalid start date.');
+  if (to && Number.isNaN(Date.parse(to))) throw new DomainError('Invalid end date.');
   return {
     search: text(query.search),
     status: status as NotificationFilters['status'],
@@ -73,9 +74,7 @@ export const createNotificationController = (repositories: RepositorySet) => {
         const pageSize = positiveInt(req.query.pageSize, 20, 100);
         return res.json(await service.list(schoolId, page, pageSize, readFilters(req.query)));
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to load SMS delivery logs.'
-        });
+        return handleControllerError(res, error, 'notificationController.list');
       }
     },
 
@@ -91,9 +90,7 @@ export const createNotificationController = (repositories: RepositorySet) => {
           records
         );
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to export SMS delivery logs.'
-        });
+        return handleControllerError(res, error, 'notificationController.export');
       }
     }
   };

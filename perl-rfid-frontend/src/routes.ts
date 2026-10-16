@@ -3,10 +3,12 @@ import {
   Building2,
   ClipboardList,
   Cpu,
+  FileText,
   LayoutDashboard,
   MessageSquare,
   ScanLine,
   ScrollText,
+  ShieldCheck,
   Users,
   type LucideIcon
 } from 'lucide-react';
@@ -17,15 +19,17 @@ import { DashboardHomePage } from './pages/DashboardHomePage';
 import { DeviceManagementPage } from './pages/DeviceManagementPage';
 import { EditProfilePage } from './pages/EditProfilePage';
 import { NotificationLogsPage } from './pages/NotificationLogsPage';
+import { RolesManagementPage } from './pages/RolesManagementPage';
 import { SchoolProfileAdminPage } from './pages/SchoolProfileAdminPage';
+import { SubmissionsPage } from './pages/SubmissionsPage';
 import { SupportSchoolsPage } from './pages/SupportSchoolsPage';
 import { UserManagementPage } from './pages/UserManagementPage';
 import {
+  canManageSchool,
   canViewLiveMonitor,
   canViewSchoolWorkspace,
   isPlatformSupport,
-  isPlatformUser,
-  isSupportAgent
+  isPlatformUser
 } from './lib/permissions';
 import type { UserRole } from './types/admin';
 
@@ -84,7 +88,7 @@ export const appRoutes: AppRouteDef[] = [
     nav: {
       icon: Building2,
       label: 'School profile',
-      group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
+      group: () => 'School management'
     }
   },
   {
@@ -95,7 +99,7 @@ export const appRoutes: AppRouteDef[] = [
     nav: {
       icon: Users,
       label: 'People',
-      group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
+      group: () => 'School management'
     }
   },
   {
@@ -106,7 +110,7 @@ export const appRoutes: AppRouteDef[] = [
     nav: {
       icon: Cpu,
       label: 'Devices',
-      group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
+      group: () => 'School management'
     }
   },
   {
@@ -117,8 +121,15 @@ export const appRoutes: AppRouteDef[] = [
     nav: {
       icon: MessageSquare,
       label: 'SMS delivery',
-      group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
+      group: () => 'School management'
     }
+  },
+  {
+    path: 'admin/submissions',
+    Component: SubmissionsPage,
+    guard: canManageSchool,
+    redirectTo: '/dashboard',
+    nav: { icon: FileText, label: 'Enrollment & inquiries', group: 'School management' }
   },
   {
     path: 'audit',
@@ -128,7 +139,7 @@ export const appRoutes: AppRouteDef[] = [
     nav: {
       icon: ScrollText,
       label: (role) => (isPlatformUser(role) ? 'System action log' : 'School action log'),
-      group: (role) => (isSupportAgent(role) ? 'School records' : 'School management')
+      group: () => 'School management'
     }
   },
   {
@@ -137,5 +148,12 @@ export const appRoutes: AppRouteDef[] = [
     guard: isPlatformSupport,
     redirectTo: '/dashboard',
     nav: { icon: Building2, label: 'School accounts', group: 'Platform support' }
+  },
+  {
+    path: 'support/roles',
+    Component: RolesManagementPage,
+    guard: isPlatformSupport,
+    redirectTo: '/dashboard',
+    nav: { icon: ShieldCheck, label: 'Roles & permissions', group: 'Platform support' }
   }
 ];

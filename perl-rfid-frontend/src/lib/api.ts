@@ -16,6 +16,23 @@ import type {
   UserRole
 } from '../types/admin';
 import type { AttendanceFilters, AttendancePage, AttendanceScanResult } from '../types/attendance';
+import type {
+  AssignableRole,
+  CreateRolePayload,
+  PermissionCatalogEntry,
+  RoleDefinition,
+  RoleListItem,
+  UpdateRolePayload
+} from '../types/role';
+import type {
+  IntakeInfo,
+  SubmissionCreatePayload,
+  SubmissionPublicPayload,
+  SubmissionRecord,
+  SubmissionStatus,
+  SubmissionType,
+  SubmissionUpdatePayload
+} from '../types/submission';
 import { downloadResponse } from './csv';
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
@@ -600,6 +617,49 @@ export const deactivateAdminUser = async (schoolId: string, userId: string): Pro
   return result.user;
 };
 
+export const reactivateAdminUser = async (schoolId: string, userId: string): Promise<ManagedUser> => {
+  const url = new URL(`/api/admin/schools/${schoolId}/users/${userId}/reactivate`, apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'include'
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to reactivate user'));
+  }
+
+  const result = (await response.json()) as { user: ManagedUser };
+
+  return result.user;
+};
+
+export interface BulkUserStatusResult {
+  updated: ManagedUser[];
+  errors: { userId: string; message: string }[];
+}
+
+export const bulkSetAdminUserStatus = async (
+  schoolId: string,
+  userIds: string[],
+  isActive: boolean
+): Promise<BulkUserStatusResult> => {
+  const url = new URL(`/api/admin/schools/${schoolId}/users/bulk-status`, apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ userIds, isActive })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to update user status'));
+  }
+
+  return (await response.json()) as BulkUserStatusResult;
+};
+
 export const fetchSupportAuditLogs = async ({
   page,
   pageSize,
@@ -753,3 +813,191 @@ export const exportNotificationLogs = async (
   const response = await fetch(url, { credentials: 'include' });
   await downloadApiCsv(response, 'sms-delivery.csv');
 };
+
+export const fetchPermissionCatalog = async (): Promise<PermissionCatalogEntry[]> => {
+  const url = new URL('/api/support/permissions/catalog', apiBaseUrl);
+  const payload = await fetchJson<{ permissions: PermissionCatalogEntry[] }>(url);
+  return payload.permissions;
+};
+
+export const fetchRoles = async (): Promise<RoleListItem[]> => {
+  const url = new URL('/api/support/roles', apiBaseUrl);
+  const payload = await fetchJson<{ roles: RoleListItem[] }>(url);
+  return payload.roles;
+};
+
+export const createRole = async (payload: CreateRolePayload): Promise<RoleDefinition> => {
+  const url = new URL('/api/support/roles', apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to create role'));
+  }
+  const result = (await response.json()) as { role: RoleDefinition };
+  return result.role;
+};
+
+export const updateRole = async (id: string, payload: UpdateRolePayload): Promise<RoleDefinition> => {
+  const url = new URL(`/api/support/roles/${id}`, apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to update role'));
+  }
+  const result = (await response.json()) as { role: RoleDefinition };
+  return result.role;
+};
+
+export const deactivateRole = async (id: string): Promise<RoleDefinition> => {
+  const url = new URL(`/api/support/roles/${id}/deactivate`, apiBaseUrl);
+  const response = await fetch(url, { method: 'PATCH', credentials: 'include' });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to deactivate role'));
+  }
+  const result = (await response.json()) as { role: RoleDefinition };
+  return result.role;
+};
+
+export const reactivateRole = async (id: string): Promise<RoleDefinition> => {
+  const url = new URL(`/api/support/roles/${id}/reactivate`, apiBaseUrl);
+  const response = await fetch(url, { method: 'PATCH', credentials: 'include' });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to reactivate role'));
+  }
+  const result = (await response.json()) as { role: RoleDefinition };
+  return result.role;
+};
+
+export const fetchAssignableRoles = async (schoolId: string): Promise<AssignableRole[]> => {
+  const url = new URL(`/api/admin/schools/${schoolId}/assignable-roles`, apiBaseUrl);
+  const payload = await fetchJson<{ roles: AssignableRole[] }>(url);
+  return payload.roles;
+};
+
+export interface AdminSubmissionsQuery {
+  page: number;
+  pageSize: number;
+  search?: string;
+  sort?: string;
+  dir?: 'asc' | 'desc';
+  type?: SubmissionType;
+  status?: SubmissionStatus;
+}
+
+export interface AdminSubmissionsPage {
+  submissions: SubmissionRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export const fetchAdminSubmissions = async (
+  schoolId: string,
+  query: AdminSubmissionsQuery
+): Promise<AdminSubmissionsPage> => {
+  const url = new URL(`/api/admin/schools/${schoolId}/submissions`, apiBaseUrl);
+  url.searchParams.set('page', String(query.page));
+  url.searchParams.set('pageSize', String(query.pageSize));
+  setQueryParam(url, 'search', query.search);
+  setQueryParam(url, 'sort', query.sort);
+  setQueryParam(url, 'dir', query.dir);
+  setQueryParam(url, 'type', query.type);
+  setQueryParam(url, 'status', query.status);
+
+  return fetchJson<AdminSubmissionsPage>(url);
+};
+
+export const createAdminSubmission = async (
+  schoolId: string,
+  payload: SubmissionCreatePayload
+): Promise<SubmissionRecord> => {
+  const url = new URL(`/api/admin/schools/${schoolId}/submissions`, apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to record this submission'));
+  }
+
+  const result = (await response.json()) as { submission: SubmissionRecord };
+  return result.submission;
+};
+
+export const updateAdminSubmission = async (
+  schoolId: string,
+  submissionId: string,
+  payload: SubmissionUpdatePayload
+): Promise<SubmissionRecord> => {
+  const url = new URL(`/api/admin/schools/${schoolId}/submissions/${submissionId}`, apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to update this submission'));
+  }
+
+  const result = (await response.json()) as { submission: SubmissionRecord };
+  return result.submission;
+};
+
+/**
+ * Public intake endpoints (unauthenticated apply page). Deliberately plain `fetch`
+ * calls with no `credentials: 'include'` — this is anonymous public traffic, not a
+ * signed-in session, and must never carry the app's auth cookie.
+ */
+export const fetchPublicIntake = async (slug: string): Promise<IntakeInfo> => {
+  const url = new URL(`/api/public/schools/${slug}/intake`, apiBaseUrl);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(
+        response,
+        response.status === 404 ? 'This school could not be found' : 'Unable to load this page'
+      )
+    );
+  }
+
+  return (await response.json()) as IntakeInfo;
+};
+
+const submitPublicForm = async (
+  slug: string,
+  kind: 'enrollment' | 'inquiry',
+  payload: SubmissionPublicPayload
+): Promise<{ message: string }> => {
+  const url = new URL(`/api/public/schools/${slug}/${kind}`, apiBaseUrl);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, 'Unable to submit this form'));
+  }
+
+  return (await response.json()) as { message: string };
+};
+
+export const submitPublicEnrollment = (slug: string, payload: SubmissionPublicPayload) =>
+  submitPublicForm(slug, 'enrollment', payload);
+
+export const submitPublicInquiry = (slug: string, payload: SubmissionPublicPayload) =>
+  submitPublicForm(slug, 'inquiry', payload);

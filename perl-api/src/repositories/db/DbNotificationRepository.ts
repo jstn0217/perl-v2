@@ -3,6 +3,12 @@ import type { INotificationRepository } from '../interfaces/INotificationReposit
 import type { NotificationTransaction } from '../../types/Notification.js';
 import { getDbPool } from './pool.js';
 
+// Hard cap on unbounded whole-school reads (listAllBySchool, used by filtered
+// listing/export). Mirrors ATTENDANCE_UNBOUNDED_READ_CAP in
+// DbAttendanceRepository. Prevents a single request from loading a school's
+// entire notification history into memory.
+const NOTIFICATION_UNBOUNDED_READ_CAP = 5000;
+
 interface NotificationRow {
   id: string;
   school_id: string;
@@ -110,8 +116,9 @@ export class DbNotificationRepository implements INotificationRepository {
       `SELECT ${selectColumns}
        FROM notification_transactions
        WHERE school_id = $1
-       ORDER BY created_at DESC, id DESC`,
-      [schoolId]
+       ORDER BY created_at DESC, id DESC
+       LIMIT $2`,
+      [schoolId, NOTIFICATION_UNBOUNDED_READ_CAP]
     );
     return rows.map(mapNotification);
   }

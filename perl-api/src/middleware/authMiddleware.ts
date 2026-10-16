@@ -3,6 +3,8 @@ import type { AuthService } from '../services/AuthService.js';
 import { env } from '../config/env.js';
 import { verifySessionToken } from '../auth/session.js';
 import type { UserRole } from '../types/User.js';
+import type { IRoleRepository } from '../repositories/interfaces/IRoleRepository.js';
+import type { PermissionKey } from '../auth/permissionCatalog.js';
 
 const getTokenFromRequest = (req: Request) => {
   const token = req.cookies?.[env.jwtCookieName];
@@ -70,6 +72,29 @@ export const requireRole =
     } catch {
       return res.status(403).json({ message: 'Forbidden.' });
     }
+  };
+
+// Permission-catalog counterpart to requireRole: instead of checking the
+// caller's raw role against a fixed list, it resolves their effective
+// permission set (custom RoleDefinition or base-role default) and checks for
+// a single catalog key. School-scoping works the same way requireRole does.
+export const requirePermission =
+  (authService: AuthService, roleRepository: IRoleRepository, permission: PermissionKey) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    if (!req.currentUser) {
+      return res.status(401).json({ message: 'Authentication required.' });
+    }
+
+    const schoolId = typeof req.params.schoolId === 'string' ? req.params.schoolId : undefined;
+
+    if (!schoolId) {
+      return res.status(400).json({ message: 'School scope is required.' });
+    }
+
+    authService
+      .assertPermissionAccess(req.currentUser, roleRepository, permission, schoolId)
+      .then(() => next())
+      .catch(() => res.status(403).json({ message: 'Forbidden.' }));
   };
 
 export const requireUserRole =

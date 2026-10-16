@@ -22,6 +22,11 @@ const validProductionEnvironment = {
     enabled: true,
     provider: 'semaphore' as const,
     apiKey: 'a-production-semaphore-key'
+  },
+  demoTenant: {
+    seedEnabled: false,
+    adminEmail: '',
+    adminPassword: ''
   }
 };
 
@@ -54,6 +59,11 @@ describe('production environment validation', () => {
           enabled: true,
           provider: 'mock',
           apiKey: ''
+        },
+        demoTenant: {
+          seedEnabled: false,
+          adminEmail: '',
+          adminPassword: ''
         }
       })
     ).toThrow(
@@ -72,6 +82,50 @@ describe('production environment validation', () => {
   });
 
   it('does not apply production constraints to local development', () => {
+    expect(() =>
+      validateRuntimeEnvironment({
+        ...validProductionEnvironment,
+        nodeEnvironment: 'development',
+        dataLayer: 'mock',
+        cookieSecure: false,
+        db: { password: 'dev', ssl: false }
+      })
+    ).not.toThrow();
+  });
+});
+
+describe('NODE_ENV must be explicitly set', () => {
+  const originalNodeEnvironment = process.env.NODE_ENV;
+
+  afterEach(() => {
+    if (originalNodeEnvironment === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnvironment;
+    }
+  });
+
+  it('throws when NODE_ENV is unset, instead of silently defaulting to development', () => {
+    delete process.env.NODE_ENV;
+
+    expect(() => validateRuntimeEnvironment()).toThrow(/NODE_ENV must be explicitly set/);
+  });
+
+  it('throws when NODE_ENV is set to an unrecognized value', () => {
+    process.env.NODE_ENV = 'staging';
+
+    expect(() => validateRuntimeEnvironment()).toThrow(/NODE_ENV must be explicitly set/);
+  });
+
+  it('does not throw this check for NODE_ENV=production with otherwise-valid config', () => {
+    process.env.NODE_ENV = 'production';
+
+    expect(() => validateRuntimeEnvironment(validProductionEnvironment)).not.toThrow();
+  });
+
+  it('still short-circuits the rest of production validation for NODE_ENV=development', () => {
+    process.env.NODE_ENV = 'development';
+
     expect(() =>
       validateRuntimeEnvironment({
         ...validProductionEnvironment,

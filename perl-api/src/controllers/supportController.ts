@@ -4,6 +4,7 @@ import { AuditService } from '../services/AuditService.js';
 import { TenantService } from '../services/TenantService.js';
 import { SCHOOL_FEATURE_KEYS, type FeatureKey } from '../types/SchoolFeature.js';
 import { readAuditFilters, sendAuditCsv } from './auditQuery.js';
+import { handleControllerError } from '../utils/errors.js';
 
 const readPositiveInteger = (value: unknown, fallback: number, maximum: number) => {
   const parsed = Number.parseInt(typeof value === 'string' ? value : '', 10);
@@ -31,9 +32,7 @@ export const createSupportController = (repositories: RepositorySet) => {
         );
         return res.status(201).json({ school });
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to create school.'
-        });
+        return handleControllerError(res, error, 'supportController.createSchool');
       }
     },
 
@@ -122,9 +121,7 @@ export const createSupportController = (repositories: RepositorySet) => {
         );
         return res.json(auditPage);
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to load audit logs.'
-        });
+        return handleControllerError(res, error, 'supportController.listAuditLogs');
       }
     },
 
@@ -143,9 +140,7 @@ export const createSupportController = (repositories: RepositorySet) => {
           req.query.columns
         );
       } catch (error) {
-        return res.status(400).json({
-          message: error instanceof Error ? error.message : 'Unable to export audit logs.'
-        });
+        return handleControllerError(res, error, 'supportController.exportAuditLogs');
       }
     },
 

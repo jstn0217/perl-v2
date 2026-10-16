@@ -18,6 +18,34 @@ const gateway: ISmsGateway = {
   }
 };
 
+const NOTIFICATION_UNBOUNDED_READ_CAP = 5000;
+
+const seedNotificationTransactions = async (
+  repository: MockNotificationRepository,
+  schoolId: string,
+  count: number
+) => {
+  for (let index = 0; index < count; index += 1) {
+    await repository.create({
+      schoolId,
+      attendanceLogId: `attendance-seed-${index}`,
+      studentUserId: 'user-seed',
+      guardianUserId: null,
+      recipient: null,
+      direction: 'IN',
+      message: 'seed message',
+      provider: 'MOCK',
+      status: 'SKIPPED',
+      providerMessageId: null,
+      providerStatus: null,
+      network: null,
+      errorMessage: 'seed',
+      createdAt: new Date(2026, 0, 1, 0, 0, index).toISOString(),
+      completedAt: null
+    });
+  }
+};
+
 describe('NotificationService', () => {
   beforeEach(() => resetMockNotificationTransactions());
 
@@ -25,13 +53,11 @@ describe('NotificationService', () => {
     const repository = new MockNotificationRepository();
     const users = new MockUserRepository();
     const tenantRepository = new MockTenantRepository();
-    const service = new NotificationService(
-      repository,
-      users,
-      tenantRepository,
-      gateway,
-      new TenantService(tenantRepository)
-    );
+    const tenantService = new TenantService(tenantRepository);
+    const service = new NotificationService(repository, users, tenantRepository, gateway, tenantService);
+    // Schools default to SMS off; enable it for this school the same way an
+    // admin/support user would, via the feature-toggle service path.
+    await tenantService.setFeature('school-st-marys', 'sms', true);
     const student = await users.findByCardUid('RFID-STMARYS-001');
     expect(student).not.toBeNull();
 
@@ -80,5 +106,32 @@ describe('NotificationService', () => {
         errorMessage: 'The school SMS subscription is disabled.'
       })
     ]);
+  });
+
+  it('caps listAllBySchool at the hard limit so a school with more records never loads them all', async () => {
+    const repository = new MockNotificationRepository();
+    await seedNotificationTransactions(repository, 'school-cap-test', NOTIFICATION_UNBOUNDED_READ_CAP + 50);
+
+    const records = await repository.listAllBySchool('school-cap-test');
+
+    expect(records.length).toBe(NOTIFICATION_UNBOUNDED_READ_CAP);
+  });
+
+  it('requires a date range once a school has hit the cap and no range was given', async () => {
+    const repository = new MockNotificationRepository();
+    const users = new MockUserRepository();
+    const tenantRepository = new MockTenantRepository();
+    const service = new NotificationService(
+      repository,
+      users,
+      tenantRepository,
+      gateway,
+      new TenantService(tenantRepository)
+    );
+    await seedNotificationTransactions(repository, 'school-cap-test', NOTIFICATION_UNBOUNDED_READ_CAP);
+
+    await expect(service.list('school-cap-test', 1, 20)).rejects.toThrow(
+      /provide a from\/to date range/
+    );
   });
 });

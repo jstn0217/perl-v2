@@ -28,12 +28,12 @@ export const createSupportRoutes = (repositories: RepositorySet) => {
   router.post('/support/schools', ...systemAdminOnly, controller.createSchool);
   router.patch(
     '/support/schools/:schoolId/sms-settings',
-    ...systemAdminOnly,
+    ...supportOnly,
     controller.updateSchoolSmsSettings
   );
   router.patch(
     '/support/schools/:schoolId/features',
-    ...systemAdminOnly,
+    ...supportOnly,
     controller.updateSchoolFeature
   );
   router.post('/support/schools/:schoolId/access', ...supportOnly, controller.accessSchool);

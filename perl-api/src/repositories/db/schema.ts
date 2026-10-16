@@ -7,8 +7,30 @@ import {
 } from '../mock/seeds.js';
 import { env } from '../../config/env.js';
 import { getDbPool } from './pool.js';
+import { seedDemoTenant } from '../seedDemoTenant.js';
+import { DbTenantRepository } from './DbTenantRepository.js';
+import { DbUserRepository } from './DbUserRepository.js';
 
 let schemaReady = false;
+
+// Sample schools/users/devices (seeds.ts) are demo/dev-only fixtures — a fresh production
+// database must never boot with these public sample credentials. See seedDemoTenant.ts for
+// the production-safe, opt-in alternative (SEED_DEMO_TENANT=true).
+const isSampleSeedEnvironment = () =>
+  env.nodeEnvironment === 'development' || env.nodeEnvironment === 'test';
+
+const seedDemoTenantIfRequested = async () => {
+  if (!env.demoTenant.seedEnabled) {
+    return;
+  }
+
+  await seedDemoTenant(new DbTenantRepository(), new DbUserRepository(), {
+    schoolName: env.demoTenant.schoolName,
+    schoolSlug: env.demoTenant.schoolSlug,
+    adminEmail: env.demoTenant.adminEmail,
+    adminPassword: env.demoTenant.adminPassword
+  });
+};
 
 // Postgres advisory locks take a bigint key, not a name. There is only ever one
 // lock used in this codebase (database bootstrap), so a fixed constant is enough.
@@ -46,6 +68,20 @@ const ensureSchoolIdNumberUniqueIndex = async (pool: Pool) => {
      ON users (school_id, school_id_number)
      WHERE school_id_number IS NOT NULL`
   );
+};
+
+const ensureUserRoleDefinitionForeignKey = async (pool: Pool) => {
+  const { rows } = await pool.query<{ constraint_name: string }>(
+    `SELECT constraint_name FROM information_schema.table_constraints
+     WHERE table_name = 'users' AND constraint_name = 'fk_users_role_definition'`
+  );
+
+  if (rows.length === 0) {
+    await pool.query(
+      `ALTER TABLE users ADD CONSTRAINT fk_users_role_definition
+       FOREIGN KEY (role_definition_id) REFERENCES role_definitions (id) ON DELETE SET NULL`
+    );
+  }
 };
 
 const createTables = async () => {
@@ -97,6 +133,22 @@ const createTables = async () => {
       CONSTRAINT uq_users_school_email UNIQUE (school_id, email)
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS role_definitions (
+      id VARCHAR(128) PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT NULL,
+      base_role VARCHAR(20) NOT NULL,
+      permissions JSONB NOT NULL DEFAULT '[]',
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(
+    'CREATE UNIQUE INDEX IF NOT EXISTS uq_role_definitions_name ON role_definitions (LOWER(name))'
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS platform_users (
@@ -195,6 +247,40 @@ const createTables = async () => {
     'CREATE INDEX IF NOT EXISTS idx_notification_attendance_log ON notification_transactions (attendance_log_id)'
   );
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS school_submissions (
+      id VARCHAR(128) PRIMARY KEY,
+      school_id VARCHAR(128) NOT NULL,
+      type VARCHAR(20) NOT NULL,
+      status VARCHAR(20) NOT NULL,
+      source VARCHAR(10) NOT NULL,
+      first_name VARCHAR(255) NOT NULL,
+      last_name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      phone VARCHAR(32) NULL,
+      address TEXT NULL,
+      grade_level_applying VARCHAR(255) NULL,
+      guardian_name VARCHAR(255) NULL,
+      message TEXT NULL,
+      notes TEXT NULL,
+      created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT fk_school_submissions_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE CASCADE
+    )
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_school_submissions_school ON school_submissions (school_id)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_school_submissions_school_type ON school_submissions (school_id, type)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_school_submissions_school_status ON school_submissions (school_id, status)'
+  );
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_school_submissions_school_created_at ON school_submissions (school_id, created_at DESC)'
+  );
+
   const ensureColumn = async (table: string, column: string, definition: string) => {
     const { rows } = await pool.query<{ column_name: string }>(
       'SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = $2',
@@ -209,7 +295,10 @@ const createTables = async () => {
   await ensureColumn('users', 'phone_number', 'VARCHAR(32) NULL');
   await ensureColumn('users', 'student_id', 'VARCHAR(255) NULL');
   await ensureColumn('users', 'school_id_number', 'VARCHAR(255) NULL');
+  // `address` (below) is deprecated in favor of the structured fields but kept,
+  // unpopulated by new writes, for rollback safety — matching the sms_enabled precedent.
   await ensureColumn('users', 'address', 'TEXT NULL');
+  await ensureColumn('users', 'role_definition_id', 'VARCHAR(128) NULL');
   await ensureColumn('schools', 'sms_enabled', 'BOOLEAN NOT NULL DEFAULT FALSE');
   await ensureColumn('schools', 'sms_sender_name', 'VARCHAR(32) NULL');
   await ensureColumn('schools', 'address', 'TEXT NULL');
@@ -218,6 +307,21 @@ const createTables = async () => {
   await ensureColumn('schools', 'academic_year_label', 'VARCHAR(64) NULL');
   await ensureColumn('schools', 'deped_school_id', 'VARCHAR(64) NULL');
   await ensureColumn('schools', 'features', "JSONB NOT NULL DEFAULT '{}'");
+  for (const table of ['users', 'schools', 'school_submissions']) {
+    await ensureColumn(table, 'address_line1', 'VARCHAR(255) NULL');
+    await ensureColumn(table, 'address_line2', 'VARCHAR(255) NULL');
+    await ensureColumn(table, 'barangay', 'VARCHAR(255) NULL');
+    await ensureColumn(table, 'city', 'VARCHAR(255) NULL');
+    await ensureColumn(table, 'province', 'VARCHAR(255) NULL');
+    await ensureColumn(table, 'zip_code', 'VARCHAR(20) NULL');
+    // One-time backfill: copy the legacy single-string address into address_line1
+    // where the structured field is still empty. The legacy column itself is left
+    // in place, unused, for rollback safety.
+    await pool.query(
+      `UPDATE ${table} SET address_line1 = address
+       WHERE address_line1 IS NULL AND address IS NOT NULL AND address <> ''`
+    );
+  }
   await pool.query(
     `UPDATE schools SET features = jsonb_set(features, '{sms}', to_jsonb(sms_enabled)) WHERE NOT (features ? 'sms')`
   );
@@ -228,6 +332,10 @@ const createTables = async () => {
   await ensureColumn('audit_logs', 'actor_role', "VARCHAR(20) NOT NULL DEFAULT 'ADMIN'");
   await ensureColumn('audit_logs', 'support_initiated', 'BOOLEAN NOT NULL DEFAULT FALSE');
   await ensureColumn('audit_logs', 'change_summary', 'TEXT NULL');
+  // Platform-wide actions (role-catalog mutations) have no owning school, so
+  // audit_logs.school_id must accept NULL. Re-running DROP NOT NULL when
+  // already nullable is a harmless no-op, matching the idempotent pattern here.
+  await pool.query('ALTER TABLE audit_logs ALTER COLUMN school_id DROP NOT NULL');
   await ensureColumn('devices', 'last_seen_at', 'TIMESTAMPTZ(3) NULL');
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_users_school ON users (school_id)');
@@ -241,6 +349,10 @@ const createTables = async () => {
   );
   await pool.query('DROP INDEX IF EXISTS idx_users_school_school_id_number');
   await ensureSchoolIdNumberUniqueIndex(pool);
+  await ensureUserRoleDefinitionForeignKey(pool);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_users_role_definition ON users (role_definition_id)'
+  );
   await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school ON devices (school_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school_name ON devices (school_id, name)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_devices_school_location ON devices (school_id, location)');
@@ -307,9 +419,10 @@ const insertSchools = async (client: PoolClient) => {
     await client.query(
       `INSERT INTO schools (
         id, slug, name, logo_url, primary_color, secondary_color, accent_color,
-        contact_email, sms_enabled, sms_sender_name, address, phone, timezone,
-        academic_year_label, deped_school_id, features, sort_order
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+        contact_email, sms_enabled, sms_sender_name, phone, timezone,
+        academic_year_label, deped_school_id, features, sort_order,
+        address_line1, address_line2, barangay, city, province, zip_code
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
       [
         school.id,
         school.slug,
@@ -321,13 +434,18 @@ const insertSchools = async (client: PoolClient) => {
         school.contactEmail,
         school.smsEnabled,
         school.smsSenderName,
-        school.address,
         school.phone,
         school.timezone,
         school.academicYearLabel,
         school.depedSchoolId,
         JSON.stringify(school.features),
-        index + 1
+        index + 1,
+        school.addressLine1,
+        school.addressLine2,
+        school.barangay,
+        school.city,
+        school.province,
+        school.zipCode
       ]
     );
   }
@@ -338,8 +456,9 @@ const insertUsers = async (client: PoolClient) => {
     await client.query(
       `INSERT INTO users (
         id, school_id, email, password_hash, first_name, last_name, role, card_uid,
-        grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, address, is_active
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        grade_level, school_id_number, section, image_url, phone_number, linked_student_ids, is_active,
+        address_line1, address_line2, barangay, city, province, zip_code
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
       [
         user.id,
         user.schoolId,
@@ -355,8 +474,13 @@ const insertUsers = async (client: PoolClient) => {
         user.imageUrl,
         user.phoneNumber ?? null,
         JSON.stringify(user.linkedStudentIds ?? []),
-        user.address,
-        user.isActive
+        user.isActive,
+        user.addressLine1,
+        user.addressLine2,
+        user.barangay,
+        user.city,
+        user.province,
+        user.zipCode
       ]
     );
   }
@@ -427,10 +551,11 @@ export const initializeDatabase = async () => {
   await withAdvisoryLock(async () => {
     await ensureDatabaseReady();
 
-    if ((await countSchools()) === 0) {
+    if (isSampleSeedEnvironment() && (await countSchools()) === 0) {
       await seedDatabase();
     }
     await seedMissingPlatformUsers();
+    await seedDemoTenantIfRequested();
   });
 };
 
@@ -445,7 +570,7 @@ export const resetDatabase = async () => {
     // so every table on either side of a foreign key must be truncated together.
     await client.query(
       `TRUNCATE TABLE
-        notification_transactions, audit_logs, attendance_logs, devices, users, platform_users, schools`
+        notification_transactions, audit_logs, attendance_logs, devices, school_submissions, users, platform_users, schools, role_definitions`
     );
     await client.query('COMMIT');
   } catch (error) {
@@ -459,6 +584,12 @@ export const resetDatabase = async () => {
 export const resetAndSeedDatabase = async () => {
   await withAdvisoryLock(async () => {
     await resetDatabase();
-    await seedDatabase();
+
+    if (isSampleSeedEnvironment()) {
+      await seedDatabase();
+    } else {
+      await seedMissingPlatformUsers();
+    }
+    await seedDemoTenantIfRequested();
   });
 };

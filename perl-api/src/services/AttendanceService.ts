@@ -16,6 +16,7 @@ import type {
 import type { UserRecord } from '../types/User.js';
 import { attendanceEventBus } from './AttendanceEventBus.js';
 import type { NotificationService } from './NotificationService.js';
+import { DomainError } from '../utils/errors.js';
 
 const COOLDOWN_MINUTES = 30;
 const MAX_DAILY_SCANS = 2;
@@ -57,7 +58,7 @@ export class AttendanceService {
       : await this.deviceRepository.findDefaultBySchoolId(schoolId);
 
     if (!device || device.schoolId !== schoolId || !device.isActive) {
-      throw new Error('No device is configured for this school.');
+      throw new DomainError('No device is configured for this school.');
     }
 
     await this.deviceRepository.touchLastSeen(device.id);
@@ -246,7 +247,7 @@ export class AttendanceService {
     const scopedRecords = await this.attendanceRepository.listAllBySchool(schoolId);
 
     if (scopedRecords.length >= ATTENDANCE_UNBOUNDED_READ_CAP && !filters.from && !filters.to) {
-      throw new Error(
+      throw new DomainError(
         `This school has more than ${ATTENDANCE_UNBOUNDED_READ_CAP} attendance records; provide a from/to date range to narrow the results.`
       );
     }

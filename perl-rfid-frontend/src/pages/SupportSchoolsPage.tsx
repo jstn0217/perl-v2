@@ -7,7 +7,8 @@ import { useTenantContext } from '../providers/TenantContext';
 import {
   createSupportSchool,
   enterSupportSchool,
-  updateSchoolFeature
+  updateSchoolFeature,
+  updateSupportSchoolSmsSettings
 } from '../lib/api';
 import { downloadCsvColumns, type CsvColumn } from '../lib/csv';
 import {
@@ -16,7 +17,7 @@ import {
   type FeatureKey,
   type SchoolProfile
 } from '../types/school';
-import { canProvisionSchools, isSupportAgent } from '../lib/permissions';
+import { canProvisionSchools, canToggleSchoolFeatures } from '../lib/permissions';
 import { useAuth } from '../providers/auth-context';
 
 const emptySchoolForm = {
@@ -69,6 +70,7 @@ const toSlug = (value: string) =>
 export const SupportSchoolsPage = () => {
   const { user } = useAuth();
   const canProvision = canProvisionSchools(user?.role);
+  const canToggleFeatures = canToggleSchoolFeatures(user?.role);
   const {
     activeSchool,
     schools,
@@ -86,6 +88,8 @@ export const SupportSchoolsPage = () => {
   const [savingFeature, setSavingFeature] = useState<{ schoolId: string; featureKey: FeatureKey } | null>(
     null
   );
+  const [senderNameDrafts, setSenderNameDrafts] = useState<Record<string, string>>({});
+  const [savingSenderNameSchoolId, setSavingSenderNameSchoolId] = useState<string | null>(null);
   const [selectedExportColumns, setSelectedExportColumns] = useState(
     defaultSchoolExportColumns
   );
@@ -127,6 +131,39 @@ export const SupportSchoolsPage = () => {
       );
     } finally {
       setSavingFeature(null);
+    }
+  };
+
+  const saveSenderName = async (school: SchoolProfile) => {
+    const draft = senderNameDrafts[school.id] ?? school.smsSenderName ?? '';
+    setSavingSenderNameSchoolId(school.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await updateSupportSchoolSmsSettings(school.id, {
+        smsSenderName: draft.trim() || null
+      });
+      const updatedSchools = schools.map((entry) => (entry.id === updated.id ? updated : entry));
+      setAuthenticatedSchool(
+        activeSchool.id === updated.id ? updated : activeSchool,
+        updatedSchools
+      );
+      setSenderNameDrafts((current) => {
+        const next = { ...current };
+        delete next[school.id];
+        return next;
+      });
+      setNotice(
+        updated.smsSenderName
+          ? `${updated.name} SMS sender name set to ${updated.smsSenderName}.`
+          : `${updated.name} SMS sender name cleared.`
+      );
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error ? updateError.message : 'Unable to update SMS sender name.'
+      );
+    } finally {
+      setSavingSenderNameSchoolId(null);
     }
   };
 
@@ -191,9 +228,7 @@ export const SupportSchoolsPage = () => {
             <p className="panel-label">{canProvision ? 'System administration' : 'Platform support'}</p>
             <h2>School accounts</h2>
             <p className="section-copy">
-              {isSupportAgent(user?.role)
-                ? 'Select a school context to inspect its profile, people, devices, attendance, and action history in read-only mode.'
-                : 'Select a school context to administer its profile, people, devices, and attendance. Every change is written to the system action log.'}
+              Select a school context to administer its profile, people, devices, and attendance. Every change is written to the system action log.
             </p>
           </div>
         </div>
@@ -267,7 +302,7 @@ export const SupportSchoolsPage = () => {
                         <span className={`status-pill ${enabled ? 'status-pill--admitted' : 'status-pill--muted'}`}>
                           {label.name} {enabled ? 'enabled' : 'disabled'}
                         </span>
-                        {canProvision ? (
+                        {canToggleFeatures ? (
                           <button
                             className="secondary-button"
                             disabled={isSaving}
@@ -281,6 +316,38 @@ export const SupportSchoolsPage = () => {
                     );
                   })}
                 </div>
+                {school.features.sms && canToggleFeatures ? (
+                  <form
+                    className="support-school-sms-sender"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveSenderName(school);
+                    }}
+                  >
+                    <label className="field">
+                      <span>SMS sender name</span>
+                      <input
+                        type="text"
+                        maxLength={11}
+                        placeholder="e.g. STMARYS"
+                        value={senderNameDrafts[school.id] ?? school.smsSenderName ?? ''}
+                        onChange={(event) =>
+                          setSenderNameDrafts((current) => ({
+                            ...current,
+                            [school.id]: event.target.value.toUpperCase()
+                          }))
+                        }
+                      />
+                    </label>
+                    <button
+                      className="secondary-button"
+                      disabled={savingSenderNameSchoolId === school.id}
+                      type="submit"
+                    >
+                      {savingSenderNameSchoolId === school.id ? 'Saving…' : 'Save sender name'}
+                    </button>
+                  </form>
+                ) : null}
               </div>
               <div className="table-actions">
                 <button

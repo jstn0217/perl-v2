@@ -15,6 +15,33 @@ erDiagram
     DEVICES ||--o{ ATTENDANCE_LOGS : "device_id"
     ATTENDANCE_LOGS ||--o{ NOTIFICATION_TRANSACTIONS : "attendance_log_id"
     USERS ||--o{ NOTIFICATION_TRANSACTIONS : "student_user_id / guardian_user_id"
+    ROLE_DEFINITIONS |o--o{ USERS : "role_definition_id (nullable)"
+    SCHOOLS ||--o{ SCHOOL_SUBMISSIONS : "school_id"
+
+    SCHOOL_SUBMISSIONS {
+        varchar_128 id PK
+        varchar_128 school_id FK "ON DELETE CASCADE"
+        varchar_20 type "ENROLLMENT|INQUIRY"
+        varchar_20 status "NEW|IN_REVIEW|ACCEPTED|DECLINED"
+        varchar_10 source "PUBLIC|MANUAL"
+        varchar_255 first_name
+        varchar_255 last_name
+        varchar_255 email
+        varchar_32 phone "nullable"
+        text address "DEPRECATED, kept for rollback; backfilled into address_line1"
+        varchar_255 address_line1 "nullable"
+        varchar_255 address_line2 "nullable"
+        varchar_255 barangay "nullable"
+        varchar_255 city "nullable"
+        varchar_255 province "nullable"
+        varchar_20 zip_code "nullable"
+        varchar_255 grade_level_applying "nullable, enrollment only"
+        varchar_255 guardian_name "nullable, enrollment only"
+        text message "nullable, inquiry only"
+        text notes "nullable, admin-only"
+        timestamptz created_at
+        timestamptz updated_at
+    }
 
     SCHOOLS {
         varchar_128 id PK
@@ -27,7 +54,13 @@ erDiagram
         varchar_255 contact_email
         boolean sms_enabled
         varchar_32 sms_sender_name
-        text address
+        text address "DEPRECATED, kept for rollback; backfilled into address_line1"
+        varchar_255 address_line1 "nullable"
+        varchar_255 address_line2 "nullable"
+        varchar_255 barangay "nullable"
+        varchar_255 city "nullable"
+        varchar_255 province "nullable"
+        varchar_20 zip_code "nullable"
         varchar_32 phone
         varchar_64 timezone "default 'Asia/Manila'"
         varchar_64 academic_year_label
@@ -49,9 +82,28 @@ erDiagram
         varchar_255 section
         text image_url
         varchar_32 phone_number
+        text address "DEPRECATED, kept for rollback; backfilled into address_line1"
+        varchar_255 address_line1 "nullable"
+        varchar_255 address_line2 "nullable"
+        varchar_255 barangay "nullable"
+        varchar_255 city "nullable"
+        varchar_255 province "nullable"
+        varchar_20 zip_code "nullable"
         text linked_student_ids "JSON-encoded string[] (guardian -> student ids)"
         boolean is_active
+        varchar_128 role_definition_id FK "nullable, ON DELETE SET NULL; only meaningful for ADMIN/STAFF"
         timestamptz created_at
+    }
+
+    ROLE_DEFINITIONS {
+        varchar_128 id PK
+        varchar_255 name UK "case-insensitive: uq_role_definitions_name on LOWER(name)"
+        text description "nullable"
+        varchar_20 base_role "ADMIN|STAFF"
+        jsonb permissions "PermissionKey[], e.g. school.users.manage"
+        boolean is_active
+        timestamptz created_at
+        timestamptz updated_at
     }
 
     PLATFORM_USERS {
@@ -91,7 +143,7 @@ erDiagram
 
     AUDIT_LOGS {
         varchar_128 id PK
-        varchar_128 school_id FK "ON DELETE CASCADE"
+        varchar_128 school_id FK "nullable, ON DELETE CASCADE; null for platform-wide actions (role-catalog mutations)"
         varchar_128 actor_user_id
         varchar_20 actor_role "default ADMIN"
         boolean support_initiated "default FALSE"
@@ -130,6 +182,9 @@ erDiagram
 - **Indexes**: `idx_attendance_school_scanned_at (school_id, scanned_at DESC)` and `idx_attendance_user_scanned_at (user_id, scanned_at DESC)` back the paginated attendance-log and per-user attendance queries; `idx_audit_school_occurred_at (school_id, occurred_at DESC)` backs the paginated audit log; `idx_notification_school_created_at (school_id, created_at DESC)` and `idx_notification_attendance_log (attendance_log_id)` back the SMS delivery-history screen and looking up notifications for a given scan.
 - **`attendance_logs.user_id` and `.device_id` are intentionally not database-level foreign keys.** A denied scan (unrecognized card) is recorded with a sentinel `user_id = 'unknown-user'` (`AttendanceService.createDeniedLog`) so every scan attempt — including ones that never resolved to a real person — is auditable; a hard FK to `users.id` would reject that row. Referential integrity for known users/devices is enforced in the service layer instead (`AttendanceService.scanCard` looks up and validates both before writing).
 - **`users.linked_student_ids`** is a `TEXT` column holding a JSON-encoded array of student user IDs (guardian → student links), not a join table. `mapUserRow` parses it defensively (invalid/missing JSON falls back to `[]`) rather than failing the read.
+- **`role_definitions` is platform-wide, not school-scoped** — a `RoleDefinition` carries no `school_id`, so a custom role created by a `SYSTEM_ADMIN` is assignable (via `users.role_definition_id`) to `ADMIN`/`STAFF` users in any school. Built-in roles (`ADMIN`, `STAFF`, `STUDENT`, `GUARDIAN`, `SYSTEM_ADMIN`, `SUPPORT`) are never rows here — they're computed in code (`perl-api/src/auth/rolePermissions.ts`) and returned alongside persisted rows only in the `GET /support/roles` response shape.
+- **`users.role_definition_id` is `ON DELETE SET NULL`**, not `CASCADE` — but in practice a `RoleDefinition` row is never deleted (no hard-delete endpoint exists, only deactivate/reactivate), so this only matters as a defensive backstop. Deactivating a role does not touch `role_definition_id` on assigned users; deactivation is blocked outright while any user is still assigned (`RoleService.deactivate`, `IUserRepository.countByRoleDefinitionId`) specifically so a user's access never silently changes underneath them.
+- **`audit_logs.school_id` is nullable** to support platform-wide actions that have no owning school — currently only `ROLE_CREATED`/`ROLE_UPDATED`/`ROLE_DEACTIVATED`/`ROLE_REACTIVATED`, recorded with `schoolId: null`. Every other audited action still carries a real `school_id`.
 - **Schema evolution is additive and idempotent**: new columns (`address`, `phone`, `timezone`, `academic_year_label`, `deped_school_id` on `schools`; `phone_number`, `linked_student_ids` on `users`; `actor_role`, `support_initiated`, `change_summary` on `audit_logs`) are added via `ensureColumn()`, which checks `information_schema.columns` before running `ALTER TABLE ... ADD COLUMN`, so re-running schema initialization against an existing database is always safe.
 - **Database bootstrap is concurrency-safe.** `initializeDatabase()` takes a Postgres advisory lock (`pg_advisory_lock`/`pg_advisory_unlock`, fixed key) around table creation and seed-on-empty so multiple API processes booting against the same empty database don't race to seed duplicate rows.
 
@@ -141,5 +196,6 @@ Every primary key is a `VARCHAR(128)` string, never a numeric auto-increment col
 - Users: `user-${schoolId}-${Date.now()}` (`AdminService.createUser`).
 - Devices: `device-${schoolId}-${Date.now()}` (`DeviceService`).
 - Audit records: `audit-${randomUUID()}` (`AuditService`).
+- Role definitions: `role-${randomUUID()}` (`RoleService`). The six built-in virtual role IDs (`role-builtin-admin`, `role-builtin-staff`, `role-builtin-student`, `role-builtin-guardian`, `role-builtin-system-admin`, `role-builtin-support`) are fixed constants, never generated, and never rows in the table — assigning one to a user is rejected the same way an unknown role ID is.
 
 This was a deliberate choice, consistent with how the mock repositories already worked before Postgres existed: IDs are assigned by application code so the exact same ID a mock-mode test or seed generates is what a real-mode run would generate too, keeping `IUserRepository`/`ITenantRepository`/etc. fully interchangeable between adapters (Liskov substitution — see `CLAUDE.md` Section 2). A numeric auto-increment primary key would force IDs to be assigned by whichever database is currently wired in, breaking that interchangeability and leaking a database-specific detail (sequence values) into code and tests that are supposed to be storage-agnostic. String IDs also avoid ID collisions across the mock/db swap in tests that seed both layers with the same fixtures.

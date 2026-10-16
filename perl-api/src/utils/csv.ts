@@ -1,3 +1,5 @@
+import { DomainError } from './errors.js';
+
 const protectSpreadsheetCell = (value: string) =>
   /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 
@@ -20,17 +22,17 @@ export const readSelectedCsvColumns = <Row>(
   columns: CsvColumn<Row>[]
 ) => {
   if (value === undefined) return columns;
-  if (typeof value !== 'string') throw new Error('Invalid export columns.');
+  if (typeof value !== 'string') throw new DomainError('Invalid export columns.');
 
   const requestedKeys = value
     .split(',')
     .map((key) => key.trim())
     .filter(Boolean);
-  if (requestedKeys.length === 0) throw new Error('Select at least one export column.');
+  if (requestedKeys.length === 0) throw new DomainError('Select at least one export column.');
 
   const allowedKeys = new Set(columns.map((column) => column.key));
   if (requestedKeys.some((key) => !allowedKeys.has(key))) {
-    throw new Error('Invalid export column selection.');
+    throw new DomainError('Invalid export column selection.');
   }
 
   const requested = new Set(requestedKeys);

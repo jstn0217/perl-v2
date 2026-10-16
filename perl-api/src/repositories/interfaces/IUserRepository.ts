@@ -29,4 +29,5 @@ export interface IUserRepository {
   delete(userId: string, schoolId: string): Promise<boolean>;
   deleteBySchool(schoolId: string): Promise<number>;
   deleteBySchoolExcept(schoolId: string, userId: string): Promise<number>;
+  countByRoleDefinitionId(roleDefinitionId: string): Promise<number>;
 }
