@@ -119,7 +119,7 @@ School users stay in the tenant-scoped user repository. The concrete support and
 | `STUDENT` | RFID card holder, attendance subject |
 | `GUARDIAN` | Notification recipient, scoped to their linked student(s) |
 | `SYSTEM_ADMIN` | Platform administrator who can provision schools and manage any selected school through the audited platform workspace |
-| `SUPPORT` | Read-only cross-school support user who can inspect records, view global logs, and use monitor diagnostics without changing school data |
+| `SUPPORT` | Cross-school support user working in an explicit, audited support context. May inspect records, view global logs, use monitor diagnostics, flip per-school feature toggles and SMS settings, and manage a school's profile, users, and devices (product-owner decisions, 2026-08 — supersedes the original read-only support model). Still excluded: school data operations (backup/restore/export/erase), submissions management, and school provisioning |
 
 Every school-user record carries a `schoolId` (the mock-data-era name for what becomes `school_id` once the DB is introduced). The signed JWT also carries this value, and ordinary backend requests derive their school from the verified session rather than client-supplied school input. Platform-user JWTs carry `schoolId: null`; their explicit target school is authorized separately and all support access and system-admin mutations are audited.
 
