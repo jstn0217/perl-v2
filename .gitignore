@@ -5,3 +5,7 @@ coverage
 .DS_Store
 *.log
 perl-rfid-device/device.conf
+
+# real data never in repo
+planning/students.csv
+*.csv.private
